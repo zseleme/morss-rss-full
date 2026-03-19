@@ -37,7 +37,6 @@ except ImportError:
     from http.client import HTTPException
     from urllib.parse import parse_qs, urljoin, urlparse
 
-
 import json
 import subprocess
 
@@ -204,8 +203,8 @@ def extract_investing_com(url):
     Uses curl_cffi to impersonate Chrome TLS fingerprint (bypasses Cloudflare bot detection).
     AMP URL: m.br.investing.com/...?ampMode=1 — simpler HTML, article in div.WYSIWYG* """
     try:
-        from curl_cffi import requests as cffi_requests
         from bs4 import BeautifulSoup
+        from curl_cffi import requests as cffi_requests
 
         # convert to AMP URL: br.investing.com -> m.br.investing.com?ampMode=1
         parsed = urlparse(url)

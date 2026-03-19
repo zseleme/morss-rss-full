@@ -22,6 +22,7 @@ import re
 import sys
 import time
 import zlib
+
 try:
     from cgi import parse_header
 except ImportError:
