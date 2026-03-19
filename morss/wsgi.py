@@ -28,9 +28,11 @@ import mimetypes
 import os.path
 import re
 import sys
+import time
 import wsgiref.handlers
 import wsgiref.simple_server
 import wsgiref.util
+from collections import deque
 
 import lxml.etree
 
@@ -47,6 +49,9 @@ from .morss import (DELAY, TIMEOUT, FeedFetch, FeedFormat, FeedGather,
 from .util import data_path
 
 PORT = int(os.getenv('PORT', 8000))
+
+_start_time = time.time()
+_request_log = deque(maxlen=50)  # last 50 feed requests
 
 
 def parse_options(options):
@@ -234,6 +239,79 @@ def cgi_get(environ, start_response):
     return [output]
 
 
+def cgi_status(environ, start_response):
+    from . import caching as _caching
+
+    uptime_s = int(time.time() - _start_time)
+    h, m, s = uptime_s // 3600, (uptime_s % 3600) // 60, uptime_s % 60
+    uptime_str = '%dh %02dm %02ds' % (h, m, s)
+
+    cache = _caching.default_cache
+    cache_type = type(cache).__name__
+    try:
+        cache_items = len(cache)
+        cache_max = _caching.CACHE_SIZE
+        cache_info = '%d / %d items' % (cache_items, cache_max)
+    except Exception:
+        cache_info = 'n/a'
+
+    rows = ''
+    for entry in reversed(_request_log):
+        status_color = '#2ecc71' if entry['ok'] else '#e74c3c'
+        status_label = 'ok' if entry['ok'] else 'erro'
+        ts = time.strftime('%H:%M:%S', time.localtime(entry['ts']))
+        url = entry['url'][:80] + ('...' if len(entry['url']) > 80 else '')
+        rows += (
+            '<tr>'
+            '<td>%s</td>'
+            '<td style="max-width:420px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="%s">%s</td>'
+            '<td><span style="color:%s">%s</span></td>'
+            '</tr>'
+        ) % (ts, entry['url'], url, status_color, status_label)
+
+    if not rows:
+        rows = '<tr><td colspan="3" style="color:#888">Nenhum feed processado ainda.</td></tr>'
+
+    html = '''<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>morss – status</title>
+  <style>
+    body { font-family: monospace; max-width: 800px; margin: 40px auto; padding: 0 20px; background: #111; color: #eee; }
+    h1 { color: #aaa; font-size: 1.2em; margin-bottom: 30px; }
+    .cards { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 30px; }
+    .card { background: #1e1e1e; border: 1px solid #333; border-radius: 6px; padding: 16px 24px; min-width: 160px; }
+    .card .label { font-size: .75em; color: #888; text-transform: uppercase; margin-bottom: 4px; }
+    .card .value { font-size: 1.4em; color: #fff; }
+    table { width: 100%%; border-collapse: collapse; font-size: .85em; }
+    th { text-align: left; color: #888; border-bottom: 1px solid #333; padding: 6px 8px; }
+    td { padding: 6px 8px; border-bottom: 1px solid #222; }
+    tr:last-child td { border-bottom: none; }
+    a { color: #888; text-decoration: none; }
+  </style>
+</head>
+<body>
+  <h1>morss / status</h1>
+  <div class="cards">
+    <div class="card"><div class="label">Uptime</div><div class="value">%s</div></div>
+    <div class="card"><div class="label">Cache</div><div class="value" style="font-size:1em">%s</div></div>
+    <div class="card"><div class="label">Tipo de cache</div><div class="value" style="font-size:.9em">%s</div></div>
+    <div class="card"><div class="label">Requests (memória)</div><div class="value">%d</div></div>
+  </div>
+  <table>
+    <thead><tr><th>Hora</th><th>Feed</th><th>Status</th></tr></thead>
+    <tbody>%s</tbody>
+  </table>
+  <p style="margin-top:24px"><a href="/">← voltar</a></p>
+</body>
+</html>''' % (uptime_str, cache_info, cache_type, len(_request_log), rows)
+
+    start_response('200 OK', [('content-type', 'text/html; charset=utf-8')])
+    return [html.encode('utf-8')]
+
+
 dispatch_table = {
     'get': cgi_get,
     }
@@ -241,6 +319,9 @@ dispatch_table = {
 
 @middleware
 def cgi_dispatcher(environ, start_response, app):
+    if request_uri(environ) == '/status':
+        return cgi_status(environ, start_response)
+
     url, options = cgi_parse_environ(environ)
 
     for key in dispatch_table.keys():
@@ -248,6 +329,24 @@ def cgi_dispatcher(environ, start_response, app):
             return dispatch_table[key](environ, start_response)
 
     return app(environ, start_response)
+
+
+@middleware
+def cgi_request_logger(environ, start_response, app):
+    url, options = cgi_parse_environ(environ)
+    if not url or request_uri(environ) in ('/', '/status', '/logo.svg', '/index.html'):
+        return app(environ, start_response)
+
+    ok = True
+    try:
+        result = app(environ, start_response)
+    except Exception:
+        ok = False
+        raise
+    finally:
+        _request_log.append({'ts': time.time(), 'url': url, 'ok': ok})
+
+    return result
 
 
 @middleware
@@ -272,6 +371,7 @@ def cgi_encode(environ, start_response, app):
 
 
 application = cgi_app
+application = cgi_request_logger(application)
 application = cgi_file_handler(application)
 application = cgi_dispatcher(application)
 application = cgi_error_handler(application)
