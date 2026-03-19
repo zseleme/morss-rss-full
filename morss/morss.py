@@ -38,6 +38,9 @@ except ImportError:
     from urllib.parse import parse_qs, urljoin, urlparse
 
 
+import json
+import subprocess
+
 MAX_ITEM = int(os.getenv('MAX_ITEM', 5)) # cache-only beyond
 MAX_TIME = int(os.getenv('MAX_TIME', 2)) # cache-only after (in sec)
 
@@ -185,6 +188,36 @@ def ItemFix(item, options, feedurl='/'):
     return item
 
 
+CUSTOM_EXTRACTORS = {}
+
+def custom_extractor(domain_pattern):
+    """ Decorator to register a custom extractor for a domain pattern """
+    def decorator(func):
+        CUSTOM_EXTRACTORS[domain_pattern] = func
+        return func
+    return decorator
+
+
+@custom_extractor('investing.com')
+def extract_investing_com(url):
+    """ Extract article body from investing.com via curl + __NEXT_DATA__ JSON """
+    try:
+        result = subprocess.run(
+            ['curl', '-sL', url, '--max-time', '15',
+             '-H', 'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+             '-H', 'Accept-Language: pt-BR,pt;q=0.9'],
+            capture_output=True, timeout=20
+        )
+        html = result.stdout.decode('utf-8', errors='replace')
+        m = re.search(r'<script id="__NEXT_DATA__" type="application/json">(.*?)</script>', html, re.DOTALL)
+        if not m:
+            return None
+        data = json.loads(m.group(1))
+        return data['props']['pageProps']['state']['newsStore']['_article']['body']
+    except Exception:
+        return None
+
+
 def ItemFill(item, options, feedurl='/', fast=False):
     """ Returns True when it has done its best """
 
@@ -193,6 +226,16 @@ def ItemFill(item, options, feedurl='/', fast=False):
         return True
 
     log(item.link)
+
+    # custom domain extractors
+    netloc = urlparse(item.link).netloc
+    for domain, extractor in CUSTOM_EXTRACTORS.items():
+        if domain in netloc:
+            content = extractor(item.link)
+            if content:
+                item.content = content
+                return True
+            break  # domain matched but extraction failed, fall through to default
 
     # download
 
