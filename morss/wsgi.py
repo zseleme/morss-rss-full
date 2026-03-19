@@ -260,17 +260,18 @@ def cgi_status(environ, start_response):
         status_color = '#2ecc71' if entry['ok'] else '#e74c3c'
         status_label = 'ok' if entry['ok'] else 'erro'
         ts = time.strftime('%H:%M:%S', time.localtime(entry['ts']))
-        url = entry['url'][:80] + ('...' if len(entry['url']) > 80 else '')
+        url = entry['url'][:70] + ('...' if len(entry['url']) > 70 else '')
         rows += (
             '<tr>'
-            '<td>%s</td>'
-            '<td style="max-width:420px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="%s">%s</td>'
+            '<td style="white-space:nowrap">%s</td>'
+            '<td style="color:#aaa;white-space:nowrap">%s</td>'
+            '<td style="max-width:380px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="%s">%s</td>'
             '<td><span style="color:%s">%s</span></td>'
             '</tr>'
-        ) % (ts, entry['url'], url, status_color, status_label)
+        ) % (ts, entry['ip'], entry['url'], url, status_color, status_label)
 
     if not rows:
-        rows = '<tr><td colspan="3" style="color:#888">Nenhum feed processado ainda.</td></tr>'
+        rows = '<tr><td colspan="4" style="color:#888">Nenhum feed processado ainda.</td></tr>'
 
     html = '''<!DOCTYPE html>
 <html>
@@ -301,7 +302,7 @@ def cgi_status(environ, start_response):
     <div class="card"><div class="label">Requests (memória)</div><div class="value">%d</div></div>
   </div>
   <table>
-    <thead><tr><th>Hora</th><th>Feed</th><th>Status</th></tr></thead>
+    <thead><tr><th>Hora</th><th>IP</th><th>Feed</th><th>Status</th></tr></thead>
     <tbody>%s</tbody>
   </table>
   <p style="margin-top:24px"><a href="/">← voltar</a></p>
@@ -337,6 +338,11 @@ def cgi_request_logger(environ, start_response, app):
     if not url or request_uri(environ) in ('/', '/status', '/logo.svg', '/index.html'):
         return app(environ, start_response)
 
+    # real IP: Cloudflare passes it in HTTP_CF_CONNECTING_IP
+    ip = (environ.get('HTTP_CF_CONNECTING_IP')
+          or environ.get('HTTP_X_FORWARDED_FOR', '').split(',')[0].strip()
+          or environ.get('REMOTE_ADDR', '?'))
+
     ok = True
     try:
         result = app(environ, start_response)
@@ -344,7 +350,7 @@ def cgi_request_logger(environ, start_response, app):
         ok = False
         raise
     finally:
-        _request_log.append({'ts': time.time(), 'url': url, 'ok': ok})
+        _request_log.append({'ts': time.time(), 'url': url, 'ok': ok, 'ip': ip})
 
     return result
 
