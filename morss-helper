@@ -6,11 +6,11 @@ if ! command -v python && command -v python3 ; then
 fi
 
 run() {
-	gunicorn --bind 0.0.0.0:${PORT:-8000} --preload --access-logfile - morss
+	gunicorn --bind 0.0.0.0:${PORT:-8000} --preload --access-logfile - --timeout ${WORKER_TIMEOUT:-120} morss
 }
 
 daemon() {
-	gunicorn --bind 0.0.0.0:${PORT:-8000} --preload --access-logfile - --daemon morss
+	gunicorn --bind 0.0.0.0:${PORT:-8000} --preload --access-logfile - --daemon --timeout ${WORKER_TIMEOUT:-120} morss
 }
 
 reload() {
