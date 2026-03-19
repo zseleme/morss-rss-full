@@ -40,6 +40,11 @@ except ImportError:
 import json
 import subprocess
 
+try:
+    from curl_cffi import requests as cffi_requests
+except ImportError:
+    cffi_requests = None
+
 MAX_ITEM = int(os.getenv('MAX_ITEM', 5)) # cache-only beyond
 MAX_TIME = int(os.getenv('MAX_TIME', 2)) # cache-only after (in sec)
 
@@ -204,7 +209,9 @@ def extract_investing_com(url):
     AMP URL: m.br.investing.com/...?ampMode=1 — simpler HTML, article in div.WYSIWYG* """
     try:
         from bs4 import BeautifulSoup
-        from curl_cffi import requests as cffi_requests
+
+        if cffi_requests is None:
+            return None
 
         # convert to AMP URL: br.investing.com -> m.br.investing.com?ampMode=1
         parsed = urlparse(url)
