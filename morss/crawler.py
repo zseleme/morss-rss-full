@@ -22,7 +22,17 @@ import re
 import sys
 import time
 import zlib
-from cgi import parse_header
+try:
+    from cgi import parse_header
+except ImportError:
+    # Python 3.13+ removed cgi module
+    from email.message import Message as _Message
+    def parse_header(value):
+        m = _Message()
+        m['content-type'] = value
+        params = dict(m.get_params() or [])
+        main = params.pop('', value.split(';')[0].strip())
+        return main, params
 from collections import OrderedDict
 from io import BytesIO, StringIO
 

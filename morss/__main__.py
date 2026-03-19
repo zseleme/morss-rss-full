@@ -42,7 +42,7 @@ def main():
             raise
 
         except Exception as e:
-            print('ERROR: %s' % e.message)
+            print('ERROR: %s' % e)
 
 if __name__ == '__main__':
     main()

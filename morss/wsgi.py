@@ -15,7 +15,15 @@
 # You should have received a copy of the GNU Affero General Public License along
 # with this program. If not, see <https://www.gnu.org/licenses/>.
 
-import cgitb
+try:
+    import cgitb
+except ImportError:
+    # Python 3.13+ removed cgitb
+    import traceback
+    class cgitb:
+        @staticmethod
+        def html(exc_info):
+            return ('<html><body><pre>%s</pre></body></html>' % traceback.format_exception(*exc_info)).encode('utf-8')
 import mimetypes
 import os.path
 import re
