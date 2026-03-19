@@ -200,23 +200,26 @@ def custom_extractor(domain_pattern):
 
 @custom_extractor('investing.com')
 def extract_investing_com(url):
-    """ Extract article body from investing.com via __NEXT_DATA__ JSON.
-    Uses curl_cffi to impersonate Chrome TLS fingerprint (bypasses Cloudflare bot detection). """
+    """ Extract article body from investing.com via AMP version.
+    Uses curl_cffi to impersonate Chrome TLS fingerprint (bypasses Cloudflare bot detection).
+    AMP URL: m.br.investing.com/...?ampMode=1 — simpler HTML, article in div.WYSIWYG* """
     try:
         from curl_cffi import requests as cffi_requests
-        resp = cffi_requests.get(url, impersonate='chrome120', timeout=15,
-                                 headers={'Accept-Language': 'pt-BR,pt;q=0.9'})
-        html = resp.text
-    except Exception:
-        return None
+        from bs4 import BeautifulSoup
 
-    m = re.search(r'<script id="__NEXT_DATA__" type="application/json">(.*?)</script>', html, re.DOTALL)
-    if not m:
-        return None
-    try:
-        data = json.loads(m.group(1))
-        return data['props']['pageProps']['state']['newsStore']['_article']['body']
-    except (KeyError, TypeError, json.JSONDecodeError):
+        # convert to AMP URL: br.investing.com -> m.br.investing.com?ampMode=1
+        parsed = urlparse(url)
+        amp_netloc = 'm.' + parsed.netloc if not parsed.netloc.startswith('m.') else parsed.netloc
+        amp_url = parsed._replace(netloc=amp_netloc, query='ampMode=1').geturl()
+
+        resp = cffi_requests.get(amp_url, impersonate='chrome120', timeout=15,
+                                 headers={'Accept-Language': 'pt-BR,pt;q=0.9'})
+        soup = BeautifulSoup(resp.content, 'lxml')
+        el = soup.select_one('div[class*="WYSIWYG"]')
+        if not el:
+            return None
+        return str(el)
+    except Exception:
         return None
 
 
