@@ -218,6 +218,30 @@ def extract_investing_com(url):
         el = soup.select_one('div[class*="WYSIWYG"]')
         if not el:
             return None
+
+        # remove app-promo banners
+        for tag in el.select('.inlineBanner, .bannerImg'):
+            tag.decompose()
+
+        # amp-img -> img
+        for amp_img in el.select('amp-img'):
+            img = soup.new_tag('img', src=amp_img.get('src', ''),
+                               width=amp_img.get('width', ''), height=amp_img.get('height', ''),
+                               style='max-width:100%;height:auto')
+            amp_img.replace_with(img)
+
+        # amp-youtube -> iframe embed
+        for amp_yt in el.select('amp-youtube'):
+            vid = amp_yt.get('data-videoid', '')
+            if vid:
+                iframe = soup.new_tag('iframe',
+                    src=f'https://www.youtube.com/embed/{vid}',
+                    width=amp_yt.get('width', '560'), height=amp_yt.get('height', '315'),
+                    frameborder='0', allowfullscreen='')
+                amp_yt.replace_with(iframe)
+            else:
+                amp_yt.decompose()
+
         return str(el)
     except Exception:
         return None
