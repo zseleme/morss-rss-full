@@ -19,7 +19,7 @@
 
 # pylint: disable=unused-import,unused-variable
 
-__version__ = ""
+__version__ = "20260318.1337"
 
 from .morss import *
 from .wsgi import application
