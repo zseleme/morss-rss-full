@@ -42,7 +42,7 @@ setup(
     },
     license = 'AGPL v3',
     packages = [package_name],
-    install_requires = ['lxml', 'bs4', 'python-dateutil', 'chardet'],
+    install_requires = ['lxml', 'bs4', 'python-dateutil', 'chardet', 'curl-cffi'],
     extras_require = {
         'full': ['redis', 'diskcache', 'gunicorn', 'setproctitle'],
         'dev': ['pylint', 'pyenchant', 'pytest', 'pytest-cov'],

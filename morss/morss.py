@@ -200,21 +200,23 @@ def custom_extractor(domain_pattern):
 
 @custom_extractor('investing.com')
 def extract_investing_com(url):
-    """ Extract article body from investing.com via curl + __NEXT_DATA__ JSON """
+    """ Extract article body from investing.com via __NEXT_DATA__ JSON.
+    Uses curl_cffi to impersonate Chrome TLS fingerprint (bypasses Cloudflare bot detection). """
     try:
-        result = subprocess.run(
-            ['curl', '-sL', url, '--max-time', '15',
-             '-H', 'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-             '-H', 'Accept-Language: pt-BR,pt;q=0.9'],
-            capture_output=True, timeout=20
-        )
-        html = result.stdout.decode('utf-8', errors='replace')
-        m = re.search(r'<script id="__NEXT_DATA__" type="application/json">(.*?)</script>', html, re.DOTALL)
-        if not m:
-            return None
+        from curl_cffi import requests as cffi_requests
+        resp = cffi_requests.get(url, impersonate='chrome120', timeout=15,
+                                 headers={'Accept-Language': 'pt-BR,pt;q=0.9'})
+        html = resp.text
+    except Exception:
+        return None
+
+    m = re.search(r'<script id="__NEXT_DATA__" type="application/json">(.*?)</script>', html, re.DOTALL)
+    if not m:
+        return None
+    try:
         data = json.loads(m.group(1))
         return data['props']['pageProps']['state']['newsStore']['_article']['body']
-    except Exception:
+    except (KeyError, TypeError, json.JSONDecodeError):
         return None
 
 
