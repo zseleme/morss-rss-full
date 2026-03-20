@@ -15,15 +15,7 @@
 # You should have received a copy of the GNU Affero General Public License along
 # with this program. If not, see <https://www.gnu.org/licenses/>.
 
-try:
-    import cgitb
-except ImportError:
-    # Python 3.13+ removed cgitb
-    import traceback
-    class cgitb:
-        @staticmethod
-        def html(exc_info):
-            return ('<html><body><pre>%s</pre></body></html>' % traceback.format_exception(*exc_info)).encode('utf-8')
+import traceback
 import mimetypes
 import os.path
 import re
@@ -151,6 +143,37 @@ def cgi_app(environ, start_response):
 
     else:
         return [out]
+
+
+ERROR_PAGE = """<!DOCTYPE html>
+<html lang="pt">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>morss – erro</title>
+  <link rel="shortcut icon" type="image/x-icon" href="/favicon.ico"/>
+  <style>
+    *{{box-sizing:border-box;margin:0;padding:0}}
+    body{{background:#0d1117;color:#c9d1d9;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;padding:2rem}}
+    .card{{background:#161b22;border:1px solid #30363d;border-radius:12px;padding:2.5rem;max-width:600px;width:100%;text-align:center}}
+    .icon{{font-size:3rem;margin-bottom:1rem}}
+    h1{{font-size:1.5rem;font-weight:600;margin-bottom:.5rem;color:#f0f6fc}}
+    .url{{font-size:.85rem;color:#8b949e;margin-bottom:1.5rem;word-break:break-all}}
+    .error{{background:#0d1117;border:1px solid #30363d;border-radius:8px;padding:1rem;font-family:monospace;font-size:.8rem;color:#f85149;text-align:left;word-break:break-all;margin-bottom:1.5rem}}
+    a{{color:#58a6ff;text-decoration:none}}
+    a:hover{{text-decoration:underline}}
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="icon">⚠️</div>
+    <h1>Não foi possível processar o feed</h1>
+    <div class="url">{url}</div>
+    <div class="error">{error}</div>
+    <a href="/">← voltar</a>
+  </div>
+</body>
+</html>"""
 
 
 def middleware(func):
@@ -364,10 +387,13 @@ def cgi_error_handler(environ, start_response, app):
         raise
 
     except Exception as e:
-        headers = {'status': '404 Not Found', 'content-type': 'text/html', 'x-morss-error': repr(e)}
+        url = request_uri(environ)
+        error_msg = repr(e)
+        headers = {'status': '404 Not Found', 'content-type': 'text/html', 'x-morss-error': error_msg}
         start_response(headers['status'], list(headers.items()), sys.exc_info())
-        log('ERROR: %s' % repr(e))
-        return [cgitb.html(sys.exc_info())]
+        log('ERROR: %s' % error_msg)
+        html = ERROR_PAGE.format(url=url, error=error_msg).encode('utf-8')
+        return [html]
 
 
 @middleware
