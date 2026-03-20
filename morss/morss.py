@@ -253,6 +253,39 @@ def extract_investing_com(url):
         return None
 
 
+@custom_extractor('moneytimes.com.br')
+def extract_moneytimes(url):
+    """ Extract article body from moneytimes.com.br.
+    Selectors: div.single_block_news_image (lead image) + div.single_block_news_text (body). """
+    try:
+        from bs4 import BeautifulSoup
+
+        if cffi_requests is None:
+            return None
+
+        resp = cffi_requests.get(url, impersonate='chrome120', timeout=15,
+                                 headers={'Accept-Language': 'pt-BR,pt;q=0.9'})
+        soup = BeautifulSoup(resp.content, 'lxml')
+
+        img_el  = soup.select_one('div.single_block_news_image')
+        text_el = soup.select_one('div.single_block_news_text')
+
+        if not text_el:
+            return None
+
+        # remove social/promo blocks inside the text
+        for tag in text_el.select('div[class*="single_meta"], div[class*="socials"], .mt-yt-btn'):
+            tag.decompose()
+
+        parts = []
+        if img_el:
+            parts.append(str(img_el))
+        parts.append(str(text_el))
+        return ''.join(parts)
+    except Exception:
+        return None
+
+
 def ItemFill(item, options, feedurl='/', fast=False):
     """ Returns True when it has done its best """
 
