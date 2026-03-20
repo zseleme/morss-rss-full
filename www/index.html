@@ -1,159 +1,53 @@
 <!DOCTYPE html>
-<html lang="pt">
-<head>
-  <meta charset="UTF-8"/>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>morss – full-text RSS</title>
-  <link rel="shortcut icon" type="image/x-icon" href="/favicon.ico"/>
-  <style>
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+<html>
+	<head>
+		<title>morss</title>
+		<meta name="viewport" content="width=device-width; initial-scale=1.0; maximum-scale=1.0;" />
+		<meta charset="UTF-8" />
+		<link rel="shortcut icon" type="image/svg+xml" href="/logo.svg" sizes="any" />
+		<style type="text/css">
+			body
+			{
+				padding : 2%;
+				margin : auto;
+				margin-top : 10px;
+				margin-bottom : 10px;
+				min-width: 70%;
+				max-width: 70px;
+				text-align : center;
+			}
 
-    body {
-      background: #0d1117;
-      color: #c9d1d9;
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-      min-height: 100vh;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      padding: 2rem;
-    }
+			input
+			{
+				display: block;
+				min-width: 50%;
+				margin: auto;
+				margin-top: 1em;
+				text-align : center;
+			}
+		</style>
+	</head>
 
-    .logo {
-      margin-bottom: 1.5rem;
-    }
+	<body>
+		<h1>morss</h1>
 
-    .logo svg rect { fill: #58a6ff; }
+		<p>Fill your RSS feeds.</p>
+		<form>
+			<input type="text" id="url" name="url" placeholder="Feed url (http://example.com/feed.xml)" />
+		</form>
 
-    h1 {
-      font-size: 2rem;
-      font-weight: 700;
-      color: #f0f6fc;
-      letter-spacing: -.5px;
-      margin-bottom: .4rem;
-    }
+		<code>Copyright: pictuga 2013-2020<br/>
+		Source code: https://git.pictuga.com/pictuga/morss</code>
 
-    .tagline {
-      color: #8b949e;
-      font-size: .95rem;
-      margin-bottom: 2.5rem;
-    }
-
-    .card {
-      background: #161b22;
-      border: 1px solid #30363d;
-      border-radius: 12px;
-      padding: 2rem;
-      width: 100%;
-      max-width: 520px;
-    }
-
-    form {
-      display: flex;
-      gap: .5rem;
-    }
-
-    input[type="text"] {
-      flex: 1;
-      background: #0d1117;
-      border: 1px solid #30363d;
-      border-radius: 8px;
-      color: #f0f6fc;
-      font-size: .95rem;
-      padding: .6rem 1rem;
-      outline: none;
-      transition: border-color .2s;
-    }
-
-    input[type="text"]::placeholder { color: #484f58; }
-    input[type="text"]:focus { border-color: #58a6ff; }
-
-    button {
-      background: #238636;
-      border: 1px solid #2ea043;
-      border-radius: 8px;
-      color: #fff;
-      cursor: pointer;
-      font-size: .9rem;
-      font-weight: 600;
-      padding: .6rem 1.2rem;
-      transition: background .2s;
-      white-space: nowrap;
-    }
-
-    button:hover { background: #2ea043; }
-
-    .hint {
-      margin-top: 1rem;
-      font-size: .8rem;
-      color: #484f58;
-    }
-
-    .hint code {
-      background: #0d1117;
-      border: 1px solid #30363d;
-      border-radius: 4px;
-      padding: .1rem .35rem;
-      color: #8b949e;
-      font-size: .78rem;
-    }
-
-    footer {
-      margin-top: 2.5rem;
-      font-size: .78rem;
-      color: #484f58;
-      text-align: center;
-    }
-
-    footer a { color: #58a6ff; text-decoration: none; }
-    footer a:hover { text-decoration: underline; }
-  </style>
-</head>
-<body>
-
-  <div class="logo">
-    <svg width="40" height="40" viewBox="0 0 16 16" shape-rendering="crispEdges" xmlns="http://www.w3.org/2000/svg">
-      <rect x="2" y="4" width="2" height="2"/>
-      <rect x="5" y="4" width="6" height="2"/>
-      <rect x="12" y="4" width="2" height="2"/>
-      <rect x="2" y="7" width="2" height="2"/>
-      <rect x="7" y="7" width="2" height="2"/>
-      <rect x="12" y="7" width="2" height="2"/>
-      <rect x="2" y="10" width="2" height="2"/>
-      <rect x="7" y="10" width="2" height="2"/>
-      <rect x="12" y="10" width="2" height="2"/>
-    </svg>
-  </div>
-
-  <h1>morss</h1>
-  <p class="tagline">feeds RSS com texto completo</p>
-
-  <div class="card">
-    <form id="rss-form">
-      <input type="text" id="url" placeholder="https://exemplo.com/feed.rss" autocomplete="off" spellcheck="false"/>
-      <button type="submit">→</button>
-    </form>
-    <p class="hint">
-      Cole a URL do feed. Prefixos opcionais: <code>:force</code> <code>:cache</code> <code>:proxy</code>
-    </p>
-  </div>
-
-  <footer>
-    baseado em <a href="https://github.com/pictuga/morss" target="_blank" rel="noopener">morss</a>
-    &nbsp;·&nbsp;
-    <a href="/status">status</a>
-    &nbsp;·&nbsp;
-    <a href="https://github.com/zseleme/morss-rss-full" target="_blank" rel="noopener">código</a>
-  </footer>
-
-  <script>
-    document.getElementById('rss-form').addEventListener('submit', function(e) {
-      e.preventDefault();
-      var url = document.getElementById('url').value.trim().replace(/^https?:\/\/?/, '');
-      if (url) document.location = '/' + url;
-    });
-  </script>
-
-</body>
+		<script>
+			form = document.forms[0]
+			form.addEventListener('submit', function(e)
+				{
+					console.log('lol');
+					url = form.elements[0].value.replace(/^https?:\/\/?/, '')
+					document.location = "./" + url;
+					e.preventDefault();
+				});
+		</script>
+	</body>
 </html>
