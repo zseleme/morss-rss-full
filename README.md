@@ -1,33 +1,47 @@
-# morss-rss-full
+# rss-full
 
-Fork do [morss](https://github.com/pictuga/morss) com melhorias para uso pessoal self-hosted no Raspberry Pi.
+> Proxy RSS que busca e embute o texto completo dos artigos no feed, com suporte a extratores customizados para sites com proteção anti-bot.
 
-[![CI](https://github.com/zseleme/morss-rss-full/actions/workflows/default.yml/badge.svg)](https://github.com/zseleme/morss-rss-full/actions)
-[![GNU AGPLv3](https://img.shields.io/static/v1?label=license&message=AGPLv3&color=blue)](LICENSE)
+## Funcionalidades
 
-## O que é
+- Conversão de feeds RSS parciais em feeds com texto completo dos artigos
+- Extratores customizados para sites com proteção anti-bot:
+  - `br.investing.com` — utiliza versão AMP com spoofing de TLS fingerprint via `curl_cffi`
+  - `moneytimes.com.br` — seletores CSS específicos para o layout do site
+- Compatibilidade com Python 3.13 (corrige remoção dos módulos `cgi` e `cgitb` do upstream)
+- Página de status (`/status`) com uptime, estatísticas de cache, últimas requisições e IP do cliente
+- Interface web redesenhada para inserção de feeds
+- Página de erro limpa e informativa
+- Cache configurável (memória, Redis ou disco)
+- Implantação via Docker com suporte a reverse proxy Caddy
+- Healthcheck integrado no container
 
-Proxy de RSS que busca o texto completo dos artigos e os embute no feed, permitindo leitura integral em qualquer leitor de RSS sem acessar o site original.
+## Tecnologias
 
-## Modificações em relação ao upstream
+- Python 3.13
+- Flask (framework web)
+- curl_cffi (spoofing de TLS fingerprint para sites protegidos)
+- lxml / BeautifulSoup (parsing HTML)
+- Docker + Docker Compose (conteinerização)
+- Alpine Linux (imagem base)
+- Caddy (reverse proxy, gerenciado externamente)
 
-- **Python 3.13**: corrige remoção do módulo `cgi` e `cgitb`
-- **Extratores customizados**: suporte específico para sites com proteção anti-bot
-  - `br.investing.com` — usa versão AMP + `curl_cffi` (Chrome TLS fingerprint)
-  - `moneytimes.com.br` — seletores específicos do layout
-- **Página de status** (`/status`) com uptime, cache, últimas requisições e IP do cliente
-- **Página de erro** limpa
-- **Interface** redesenhada
+## Pré-requisitos
 
-## Deploy (Raspberry Pi + Docker + Caddy)
+- Docker e Docker Compose instalados no host
+- Rede Docker externa chamada `proxy` (para integração com Caddy)
+- Caddy configurado no host como reverse proxy (opcional, mas recomendado para produção)
+
+## Instalação / Deploy
+
+### 1. Clonar o repositório
 
 ```bash
 git clone https://github.com/zseleme/morss-rss-full /opt/docker/morss
 cd /opt/docker/morss
-docker compose up -d --build
 ```
 
-### compose.yml
+### 2. Criar o arquivo `compose.yml`
 
 ```yaml
 networks:
@@ -57,7 +71,13 @@ volumes:
   morss_cache:
 ```
 
-### Caddyfile
+### 3. Subir o container
+
+```bash
+docker compose up -d --build
+```
+
+### 4. Configurar o Caddy (Caddyfile)
 
 ```
 rss.example.com {
@@ -65,9 +85,16 @@ rss.example.com {
 }
 ```
 
+### 5. Executar localmente sem Docker
+
+```bash
+pip install -r requirements.txt
+python -m flask run
+```
+
 ## Uso
 
-Acesse `https://rss.example.com/` e cole a URL do feed, ou use diretamente:
+Acesse `https://rss.example.com/` e cole a URL do feed RSS desejado, ou use diretamente na URL:
 
 ```
 https://rss.example.com/br.investing.com/rss/news_285.rss
@@ -80,13 +107,13 @@ https://rss.example.com/www.moneytimes.com.br/feed/
 https://rss.example.com/:force/br.investing.com/rss/news_285.rss
 ```
 
-### Status
+### Verificar status do serviço
 
 ```
 https://rss.example.com/status
 ```
 
-## Variáveis de ambiente
+### Variáveis de ambiente
 
 | Variável | Padrão | Descrição |
 |----------|--------|-----------|
@@ -97,9 +124,9 @@ https://rss.example.com/status
 | `CACHE` | memória | Backend de cache: `redis` ou `diskcache` |
 | `CACHE_SIZE` | 1000 | Número máximo de itens no cache |
 
-## Adicionar extrator customizado
+### Adicionar extrator customizado
 
-Para sites que bloqueiam o crawler padrão, adicione em `morss/morss.py`:
+Para sites que bloqueiam o crawler padrão, adicione um extrator em `morss/morss.py` seguindo o padrão:
 
 ```python
 @custom_extractor('exemplo.com.br')
@@ -111,6 +138,34 @@ def extract_exemplo(url):
     el = soup.select_one('div.article-content')
     return str(el) if el else None
 ```
+
+### Ver logs
+
+```bash
+docker compose logs -f
+```
+
+## Arquitetura
+
+```
+rss-full/
+├── morss/              # Código-fonte principal (fork do morss)
+│   └── morss.py        # Lógica central, extratores customizados
+├── www/                # Arquivos estáticos da interface web
+├── Dockerfile          # Build Alpine Linux com dependências Python
+├── morss-helper        # Script de entrypoint e healthcheck
+├── main.py             # Entry point Flask
+└── setup.py            # Definição do pacote Python
+```
+
+O fluxo de uma requisição é:
+
+1. O cliente envia a URL do feed para o proxy
+2. O proxy baixa o feed RSS original e itera sobre os itens
+3. Para cada item, busca o conteúdo completo da página (com extrator padrão ou customizado)
+4. O feed enriquecido com o texto completo é retornado ao cliente em formato RSS 2.0
+
+O cache (em memória por padrão) evita requisições repetidas ao site original. O endpoint `/status` expõe métricas de uptime e cache em tempo real — os dados são voláteis e reiniciam junto com o container.
 
 ## Licença
 

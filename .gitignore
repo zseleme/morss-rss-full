@@ -7,3 +7,4 @@ dist/
 build/
 .env
 check_investing.py
+CLAUDE.md
