@@ -22,6 +22,8 @@ from collections import OrderedDict
 
 CACHE_SIZE = int(os.getenv('CACHE_SIZE', 1000)) # max number of items in cache (default: 1k items)
 CACHE_LIFESPAN = int(os.getenv('CACHE_LIFESPAN', 60)) # how often to auto-clear the cache (default: 1min)
+DISKCACHE_SIZE = int(os.getenv('DISKCACHE_SIZE', 100 * 1024 * 1024)) # diskcache size limit, in bytes (default: 100MB)
+REDIS_TTL = int(os.getenv('REDIS_TTL', 7 * 24 * 60 * 60)) # redis entries expiry, in sec (default: 7 days, 0: never)
 
 
 class BaseCache:
@@ -70,8 +72,9 @@ except ImportError:
 
 
 class RedisCacheHandler(BaseCache):
-    def __init__(self, host='localhost', port=6379, db=0, password=None):
+    def __init__(self, host='localhost', port=6379, db=0, password=None, ttl=None):
         self.r = redis.Redis(host=host, port=port, db=db, password=password)
+        self.ttl = ttl
 
     def __getitem__(self, key):
         data = self.r.get(key)
@@ -84,7 +87,9 @@ class RedisCacheHandler(BaseCache):
         return data
 
     def __setitem__(self, key, data):
-        self.r.set(key, data)
+        # without an expiry, entries (e.g. one article body per extracted URL)
+        # would pile up forever: redis has no size cap of its own here
+        self.r.set(key, data, ex=self.ttl or None)
 
 
 try:
@@ -116,13 +121,14 @@ if 'CACHE' in os.environ:
             host = os.getenv('REDIS_HOST', 'localhost'),
             port = int(os.getenv('REDIS_PORT', 6379)),
             db = int(os.getenv('REDIS_DB', 0)),
-            password = os.getenv('REDIS_PWD', None)
+            password = os.getenv('REDIS_PWD', None),
+            ttl = REDIS_TTL
         )
 
     elif os.environ['CACHE'] == 'diskcache':
         default_cache = DiskCacheHandler(
             directory = os.getenv('DISKCACHE_DIR', '/tmp/morss-diskcache'),
-            size_limit = CACHE_SIZE # in Bytes
+            size_limit = DISKCACHE_SIZE # in bytes (CACHE_SIZE is an item count)
         )
 
 else:
