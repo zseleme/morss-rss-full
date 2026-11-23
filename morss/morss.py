@@ -210,6 +210,13 @@ CUSTOM_CACHE_PREFIX = 'custom-extractor:'
 CUSTOM_FAIL_PREFIX = 'custom-extractor-fail:'
 
 
+def domain_matches(host, domain):
+    """ True if `host` is `domain` or one of its subdomains """
+    host = (host or '').lower().rstrip('.')
+    domain = domain.lower()
+    return host == domain or host.endswith('.' + domain)
+
+
 def custom_extractor(domain_pattern):
     """ Decorator to register a custom extractor for a domain pattern """
     def decorator(func):
@@ -433,9 +440,9 @@ def ItemFill(item, options, feedurl='/', fast=False):
     log(item.link)
 
     # custom domain extractors
-    netloc = urlparse(item.link).netloc
+    host = urlparse(item.link).hostname
     for domain, extractor in CUSTOM_EXTRACTORS.items():
-        if domain in netloc:
+        if domain_matches(host, domain):
             # articles don't change once published: reuse previous extractions,
             # including in fast (cache-only) mode
             content = custom_cache_get(item.link) if not options.force else None

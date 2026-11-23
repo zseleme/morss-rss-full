@@ -168,3 +168,29 @@ def test_itemfill_sanitizes_extracted_and_cached_content(mock_cffi, monkeypatch)
     item = MagicMock(link='https://br.investing.com/news/xss-2')
     assert morss.ItemFill(item, options, fast=True) is True
     assert 'onclick' not in item.content and 'old' in item.content
+
+
+@pytest.mark.parametrize('host, expected', [
+    ('investing.com', True),
+    ('br.investing.com', True),
+    ('m.br.investing.com', True),
+    ('BR.Investing.COM', True),
+    ('br.investing.com.', True),
+    ('notinvesting.com', False),
+    ('investing.com.evil.tld', False),
+    ('evil.tld', False),
+    (None, False),
+])
+def test_domain_matches(host, expected):
+    from morss.morss import domain_matches
+    assert domain_matches(host, 'investing.com') is expected
+
+
+@patch('morss.morss.cffi_requests')
+def test_itemfill_skips_extractor_for_lookalike_domain(mock_cffi, monkeypatch):
+    from morss import caching, morss
+    monkeypatch.setattr(caching, 'default_cache', caching.CappedDict())
+    item = MagicMock(link='https://investing.com.evil.tld:8443/news/x')
+    with patch('morss.morss.crawler.adv_get', side_effect=IOError):
+        morss.ItemFill(item, morss.Options({}))
+    mock_cffi.get.assert_not_called()
