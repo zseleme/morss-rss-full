@@ -272,6 +272,51 @@ def custom_cache_set(url, content):
         log('custom cache error: %r' % e)
 
 
+# Custom extractors return raw page HTML, which the HTML view (www/sheet.xsl)
+# injects with innerHTML on the morss origin: strip anything that can run code.
+SANITIZE_DROP_TAGS = {'script', 'style', 'link', 'meta', 'base', 'object', 'embed',
+                      'applet', 'frame', 'frameset', 'form', 'input', 'button',
+                      'textarea', 'select', 'noscript', 'template', 'svg', 'math'}
+SANITIZE_ATTRIBUTES = {'href', 'src', 'alt', 'title', 'width', 'height', 'style',
+                       'class', 'colspan', 'rowspan', 'frameborder', 'allowfullscreen'}
+SANITIZE_URL_ATTRIBUTES = ('href', 'src')
+SANITIZE_IFRAME_SRC = ('https://www.youtube.com/embed/', 'https://www.youtube-nocookie.com/embed/')
+
+
+def sanitize_html(content):
+    """ Returns `content` without scripts, event handlers, javascript: URLs
+    and embeds (except YouTube iframes), or None if nothing is left """
+    try:
+        root = lxml.html.fragment_fromstring(content, create_parent='div')
+    except (lxml.etree.ParserError, ValueError):
+        return None
+
+    for el in list(root.iter()):
+        if el is root:
+            continue
+
+        if not isinstance(el.tag, str):
+            # comments, processing instructions
+            el.drop_tree()
+            continue
+
+        tag = el.tag.lower()
+
+        if tag in SANITIZE_DROP_TAGS or (tag == 'iframe' and not el.get('src', '').startswith(SANITIZE_IFRAME_SRC)):
+            el.drop_tree()
+            continue
+
+        for attr in list(el.attrib):
+            value = re.sub(r'[\s\x00-\x1f]', '', el.attrib[attr]).lower()
+
+            if (attr.lower() not in SANITIZE_ATTRIBUTES
+                    or (attr.lower() in SANITIZE_URL_ATTRIBUTES and value.startswith(('javascript:', 'vbscript:', 'data:')))
+                    or (attr.lower() == 'style' and ('expression(' in value or 'javascript:' in value or 'url(' in value))):
+                del el.attrib[attr]
+
+    return lxml.html.tostring(root, encoding='unicode')
+
+
 def custom_failed_recently(url):
     """ True if extracting `url` failed less than DELAY seconds ago """
     try:
@@ -398,13 +443,16 @@ def ItemFill(item, options, feedurl='/', fast=False):
             if content is None and not fast and (options.force or not custom_failed_recently(item.link)):
                 content = extractor(item.link, time.time() + EXTRACTOR_TIMEOUT)
                 if content:
+                    content = sanitize_html(content)
+                if content:
                     custom_cache_set(item.link, content)
                 else:
                     # don't pay the full timeout again on every refresh
                     custom_failed_set(item.link)
 
             if content:
-                item.content = content
+                # also covers entries cached before sanitization existed
+                item.content = sanitize_html(content) or ''
                 return True
             break  # domain matched but extraction failed, fall through to default
 

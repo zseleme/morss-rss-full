@@ -132,3 +132,39 @@ def test_itemfill_remembers_failed_extraction(mock_cffi, monkeypatch):
         assert calls > 0
         morss.ItemFill(item, options)
     assert mock_cffi.get.call_count == calls  # second refresh skips the extractor
+
+
+def test_sanitize_html_strips_active_content():
+    from morss.morss import sanitize_html
+    out = sanitize_html(
+        '<div class="WYSIWYG"><p onclick="x()">texto</p>'
+        '<img src="https://e.com/a.jpg" onerror="alert(1)" style="max-width:100%">'
+        '<script>alert(2)</script><a href=" java\tscript:alert(3)">link</a>'
+        '<iframe src="https://evil.com/x"></iframe>'
+        '<iframe src="https://www.youtube.com/embed/abc" allowfullscreen=""></iframe>'
+        '<svg><script>alert(4)</script></svg><!-- c --></div>')
+    assert 'texto' in out and 'link' in out
+    assert 'https://e.com/a.jpg' in out and 'max-width:100%' in out
+    assert 'https://www.youtube.com/embed/abc' in out
+    for bad in ('onclick', 'onerror', '<script', 'javascript', 'evil.com', '<svg', '<!--'):
+        assert bad not in out
+
+
+@patch('morss.morss.cffi_requests')
+def test_itemfill_sanitizes_extracted_and_cached_content(mock_cffi, monkeypatch):
+    from morss import caching, morss
+    monkeypatch.setattr(caching, 'default_cache', caching.CappedDict())
+    options = morss.Options({})
+
+    mock_cffi.get.return_value = FakeResponse(
+        '<div class="WYSIWYG"><p>ok</p><img src=x onerror="alert(1)"></div>')
+    item = MagicMock(link='https://br.investing.com/news/xss-1')
+    assert morss.ItemFill(item, options) is True
+    assert 'onerror' not in item.content and 'ok' in item.content
+    assert 'onerror' not in morss.custom_cache_get(item.link)
+
+    # entry poisoned before sanitization existed
+    morss.custom_cache_set('https://br.investing.com/news/xss-2', '<p onclick="x()">old</p>')
+    item = MagicMock(link='https://br.investing.com/news/xss-2')
+    assert morss.ItemFill(item, options, fast=True) is True
+    assert 'onclick' not in item.content and 'old' in item.content
