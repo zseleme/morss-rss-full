@@ -10,8 +10,10 @@ primary_region = 'gru'
 
 [env]
   PORT = '8080'
-  # seconds spent fetching full articles per request (then cache-only),
-  # and hard limit after which remaining items are dropped
+  # fetch full articles for up to MAX_ITEM items (default 5; the rest are
+  # cache-only and dropped when not cached), within MAX_TIME seconds per
+  # request; LIM_TIME is the hard limit after which remaining items are dropped
+  MAX_ITEM = '10'
   MAX_TIME = '15'
   LIM_TIME = '25'
 
