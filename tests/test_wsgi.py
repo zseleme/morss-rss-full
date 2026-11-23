@@ -87,3 +87,37 @@ def test_status_escapes_logged_values(monkeypatch):
     assert b'<script>alert' not in body
     assert b'&quot;&gt;&lt;img' in body
     assert b'&lt;script&gt;alert(2)' in body
+
+
+SPOOFED = {'REMOTE_ADDR': '10.0.0.1', 'HTTP_CF_CONNECTING_IP': '6.6.6.6',
+           'HTTP_X_FORWARDED_FOR': '6.6.6.6, 203.0.113.9', 'HTTP_FLY_CLIENT_IP': '198.51.100.7'}
+
+
+def test_client_ip_ignores_proxy_headers_by_default(monkeypatch):
+    from morss.wsgi import client_ip
+    monkeypatch.delenv('CLIENT_IP_HEADER', raising=False)
+    monkeypatch.delenv('FLY_APP_NAME', raising=False)
+    assert client_ip(dict(SPOOFED)) == '10.0.0.1'
+
+
+def test_client_ip_uses_fly_header_on_fly(monkeypatch):
+    from morss.wsgi import client_ip
+    monkeypatch.delenv('CLIENT_IP_HEADER', raising=False)
+    monkeypatch.setenv('FLY_APP_NAME', 'morss')
+    assert client_ip(dict(SPOOFED)) == '198.51.100.7'
+
+
+@pytest.mark.parametrize('header, expected', [
+    ('CF-Connecting-IP', '6.6.6.6'),
+    ('X-Forwarded-For', '203.0.113.9'),  # rightmost hop, not the client-supplied one
+])
+def test_client_ip_configured_header(monkeypatch, header, expected):
+    from morss.wsgi import client_ip
+    monkeypatch.setenv('CLIENT_IP_HEADER', header)
+    assert client_ip(dict(SPOOFED)) == expected
+
+
+def test_client_ip_falls_back_when_header_missing(monkeypatch):
+    from morss.wsgi import client_ip
+    monkeypatch.setenv('CLIENT_IP_HEADER', 'CF-Connecting-IP')
+    assert client_ip({'REMOTE_ADDR': '10.0.0.1'}) == '10.0.0.1'

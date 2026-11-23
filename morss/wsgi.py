@@ -397,16 +397,36 @@ def cgi_dispatcher(environ, start_response, app):
     return app(environ, start_response)
 
 
+def client_ip(environ):
+    """ Client IP for the /status log. Proxy headers can be forged by any
+    client, so only trust the one set by the proxy actually in front of the
+    app: CLIENT_IP_HEADER (e.g. CF-Connecting-IP, X-Forwarded-For), defaulting
+    to Fly-Client-IP on Fly.io (FLY_APP_NAME is set there) and to the socket
+    address otherwise. """
+    header = os.getenv('CLIENT_IP_HEADER') or ('Fly-Client-IP' if os.getenv('FLY_APP_NAME') else '')
+
+    if header:
+        value = environ.get('HTTP_' + header.strip().upper().replace('-', '_'), '')
+
+        if header.strip().lower() == 'x-forwarded-for':
+            # the rightmost entry is the one appended by our own proxy; the
+            # ones before it come from the client
+            value = value.split(',')[-1]
+
+        value = value.strip()
+        if value:
+            return value
+
+    return environ.get('REMOTE_ADDR', '?')
+
+
 @middleware
 def cgi_request_logger(environ, start_response, app):
     url, options = cgi_parse_environ(environ)
     if not url or request_uri(environ) in ('/', '/status', '/logo.svg', '/index.html'):
         return app(environ, start_response)
 
-    # real IP: Cloudflare passes it in HTTP_CF_CONNECTING_IP
-    ip = (environ.get('HTTP_CF_CONNECTING_IP')
-          or environ.get('HTTP_X_FORWARDED_FOR', '').split(',')[0].strip()
-          or environ.get('REMOTE_ADDR', '?'))
+    ip = client_ip(environ)
 
     ok = True
     try:
