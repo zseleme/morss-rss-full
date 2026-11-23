@@ -39,6 +39,7 @@ except ImportError:
 
 import json
 import subprocess
+from html import escape as html_escape
 
 try:
     from curl_cffi import requests as cffi_requests
@@ -285,20 +286,32 @@ def custom_cache_set(url, content):
         log('custom cache error: %r' % e)
 
 
-# Custom extractors return raw page HTML, which the HTML view (www/sheet.xsl)
-# injects with innerHTML on the morss origin: strip anything that can run code.
+# Item HTML (feed descriptions, readability output, custom extractors) ends up
+# injected with innerHTML on the morss origin by the HTML view (www/sheet.xsl):
+# strip anything that can run code.
 SANITIZE_DROP_TAGS = {'script', 'style', 'link', 'meta', 'base', 'object', 'embed',
                       'applet', 'frame', 'frameset', 'form', 'input', 'button',
                       'textarea', 'select', 'noscript', 'template', 'svg', 'math'}
 SANITIZE_ATTRIBUTES = {'href', 'src', 'alt', 'title', 'width', 'height', 'style',
                        'class', 'colspan', 'rowspan', 'frameborder', 'allowfullscreen'}
 SANITIZE_URL_ATTRIBUTES = ('href', 'src')
-SANITIZE_IFRAME_SRC = ('https://www.youtube.com/embed/', 'https://www.youtube-nocookie.com/embed/')
+# a cross-origin http(s) iframe can't reach the morss page; javascript:/data:
+# URLs and srcdoc could, and are removed
+SANITIZE_IFRAME_SRC = ('http://', 'https://')
+UNSAFE_URL_SCHEMES = ('javascript:', 'vbscript:', 'data:')
+URL_IGNORED_CHARS = re.compile(r'[\s\x00-\x1f]')
+
+
+def is_unsafe_url(value):
+    """ True for javascript:/vbscript:/data: URLs, including obfuscated ones
+    (browsers ignore whitespace and control chars in the scheme) """
+    return URL_IGNORED_CHARS.sub('', value or '').lower().startswith(UNSAFE_URL_SCHEMES)
 
 
 def sanitize_html(content):
     """ Returns `content` without scripts, event handlers, javascript: URLs
-    and embeds (except YouTube iframes), or None if nothing is left """
+    and embeds (except http(s) iframes), or None if nothing is left.
+    Idempotent: the output isn't wrapped, so it can be sanitized again. """
     try:
         root = lxml.html.fragment_fromstring(content, create_parent='div')
     except (lxml.etree.ParserError, ValueError):
@@ -315,22 +328,24 @@ def sanitize_html(content):
 
         tag = el.tag.lower()
 
-        if tag in SANITIZE_DROP_TAGS or (tag == 'iframe' and not el.get('src', '').startswith(SANITIZE_IFRAME_SRC)):
+        if tag in SANITIZE_DROP_TAGS or (tag == 'iframe' and not el.get('src', '').strip().lower().startswith(SANITIZE_IFRAME_SRC)):
             el.drop_tree()
             continue
 
         for attr in list(el.attrib):
-            value = re.sub(r'[\s\x00-\x1f]', '', el.attrib[attr]).lower()
+            value = URL_IGNORED_CHARS.sub('', el.attrib[attr]).lower()
 
             if (attr.lower() not in SANITIZE_ATTRIBUTES
-                    or (attr.lower() in SANITIZE_URL_ATTRIBUTES and value.startswith(('javascript:', 'vbscript:', 'data:')))
+                    or (attr.lower() in SANITIZE_URL_ATTRIBUTES and is_unsafe_url(value))
                     or (attr.lower() == 'style' and ('expression(' in value or 'javascript:' in value or 'url(' in value))):
                 del el.attrib[attr]
 
     if not root.text_content().strip() and root.find('.//img') is None and root.find('.//iframe') is None:
         return None
 
-    return lxml.html.tostring(root, encoding='unicode')
+    # inner HTML only (no wrapper div), so sanitizing twice doesn't nest divs
+    return html_escape(root.text or '', quote=False) + ''.join(
+        lxml.html.tostring(child, encoding='unicode') for child in root)
 
 
 def custom_failed_recently(url):
@@ -538,6 +553,17 @@ def ItemAfter(item, options):
         item.content = lxml.etree.tostring(content, method='html')
 
     if options.noref:
+        item.link = ''
+
+    # the HTML view (www/sheet.xsl) puts these in the page with innerHTML and
+    # in an href: sanitize every item, not only custom extractions
+    if item.desc:
+        item.desc = sanitize_html(item.desc) or ''
+
+    if item.content:
+        item.content = sanitize_html(item.content) or ''
+
+    if item.link and is_unsafe_url(item.link):
         item.link = ''
 
     return item

@@ -140,13 +140,13 @@ def test_sanitize_html_strips_active_content():
         '<div class="WYSIWYG"><p onclick="x()">texto</p>'
         '<img src="https://e.com/a.jpg" onerror="alert(1)" style="max-width:100%">'
         '<script>alert(2)</script><a href=" java\tscript:alert(3)">link</a>'
-        '<iframe src="https://evil.com/x"></iframe>'
+        '<iframe src="javascript:alert(5)"></iframe><iframe srcdoc="<script>alert(6)</script>"></iframe>'
         '<iframe src="https://www.youtube.com/embed/abc" allowfullscreen=""></iframe>'
         '<svg><script>alert(4)</script></svg><!-- c --></div>')
     assert 'texto' in out and 'link' in out
     assert 'https://e.com/a.jpg' in out and 'max-width:100%' in out
     assert 'https://www.youtube.com/embed/abc' in out
-    for bad in ('onclick', 'onerror', '<script', 'javascript', 'evil.com', '<svg', '<!--'):
+    for bad in ('onclick', 'onerror', '<script', 'javascript', 'srcdoc', 'alert(6)', '<svg', '<!--'):
         assert bad not in out
 
 
@@ -251,3 +251,50 @@ def test_itemfill_falls_back_when_cached_extraction_is_empty(monkeypatch):
 
     adv_get.assert_called_once()
     assert item.content == 'original'
+
+
+def test_sanitize_html_is_idempotent_and_unwrapped():
+    from morss.morss import sanitize_html
+    once = sanitize_html('texto <b>negrito</b> &amp; <p>par</p>')
+    assert once == 'texto <b>negrito</b> &amp; <p>par</p>'
+    assert sanitize_html(once) == once
+
+
+def test_sanitize_html_keeps_cross_origin_iframes():
+    from morss.morss import sanitize_html
+    out = sanitize_html('<p>x</p><iframe src="https://player.vimeo.com/video/1"></iframe>')
+    assert 'player.vimeo.com' in out
+
+
+@pytest.mark.parametrize('url, unsafe', [
+    ('javascript:alert(1)', True),
+    (' JaVa	ScRiPt:alert(1)', True),
+    ('data:text/html,<script>', True),
+    ('vbscript:x', True),
+    ('https://br.investing.com/news/x', False),
+    ('/relative/path', False),
+    ('', False),
+])
+def test_is_unsafe_url(url, unsafe):
+    from morss.morss import is_unsafe_url
+    assert is_unsafe_url(url) is unsafe
+
+
+def test_itemafter_sanitizes_every_item():
+    from morss import morss
+    item = MagicMock(desc='<img src=x onerror="alert(1)"><b>resumo</b>',
+                     content='<p onclick="x()">corpo</p><script>alert(2)</script>',
+                     link='javascript:alert(3)')
+    morss.ItemAfter(item, morss.Options({}))
+    assert 'onerror' not in item.desc and '<b>resumo</b>' in item.desc
+    assert 'onclick' not in item.content and '<script' not in item.content and 'corpo' in item.content
+    assert item.link == ''
+
+
+def test_itemafter_keeps_safe_items():
+    from morss import morss
+    item = MagicMock(desc='Texto simples', content='<p>corpo</p>', link='https://e.com/a')
+    morss.ItemAfter(item, morss.Options({}))
+    assert item.desc == 'Texto simples'
+    assert item.content == '<p>corpo</p>'
+    assert item.link == 'https://e.com/a'
