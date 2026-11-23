@@ -5,12 +5,21 @@ if ! command -v python && command -v python3 ; then
 	alias python='python3'
 fi
 
+gunicorn_extra_opts() {
+	# gunicorn >= 25.1 opens a control socket in $HOME/.gunicorn, which fails
+	# in the container (uid 1000 has no home, so HOME=/). morss doesn't use it
+	# (reload goes through signals), so disable it where the flag exists.
+	if gunicorn --help 2>/dev/null | grep -q -- '--no-control-socket'; then
+		echo '--no-control-socket'
+	fi
+}
+
 run() {
-	gunicorn --bind 0.0.0.0:${PORT:-8000} --preload --access-logfile - --timeout ${WORKER_TIMEOUT:-120} morss
+	gunicorn --bind 0.0.0.0:${PORT:-8000} --preload --access-logfile - --timeout ${WORKER_TIMEOUT:-120} $(gunicorn_extra_opts) morss
 }
 
 daemon() {
-	gunicorn --bind 0.0.0.0:${PORT:-8000} --preload --access-logfile - --daemon --timeout ${WORKER_TIMEOUT:-120} morss
+	gunicorn --bind 0.0.0.0:${PORT:-8000} --preload --access-logfile - --daemon --timeout ${WORKER_TIMEOUT:-120} $(gunicorn_extra_opts) morss
 }
 
 reload() {
