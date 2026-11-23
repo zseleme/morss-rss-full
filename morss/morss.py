@@ -199,7 +199,15 @@ CUSTOM_EXTRACTORS = {}
 # browser version shipped with the installed curl_cffi.
 IMPERSONATE = os.getenv('IMPERSONATE', 'chrome,safari').split(',')
 
+# Overall time budget (in sec) for one custom extraction, across every URL and
+# fingerprint it tries, so a blocked site can't stall the whole feed.
+EXTRACTOR_TIMEOUT = float(os.getenv('EXTRACTOR_TIMEOUT', 10))
+
+# Statuses worth retrying with another fingerprint (Cloudflare blocks/challenges).
+CFFI_RETRY_STATUS = (403, 503)
+
 CUSTOM_CACHE_PREFIX = 'custom-extractor:'
+CUSTOM_FAIL_PREFIX = 'custom-extractor-fail:'
 
 
 def custom_extractor(domain_pattern):
@@ -210,15 +218,24 @@ def custom_extractor(domain_pattern):
     return decorator
 
 
-def cffi_get(url):
+def cffi_get(url, deadline=None):
     """ GET with curl_cffi, trying each browser fingerprint until one is not
-    blocked. Returns the response, or None if all of them failed. """
+    blocked, without going past `deadline` (a time.time() value; defaults to
+    EXTRACTOR_TIMEOUT from now). Returns the response, or None on failure. """
     if cffi_requests is None:
         return None
 
+    if deadline is None:
+        deadline = time.time() + EXTRACTOR_TIMEOUT
+
     for impersonate in IMPERSONATE:
+        remaining = deadline - time.time()
+        if remaining <= 0:
+            log('cffi deadline exceeded')
+            return None
+
         try:
-            resp = cffi_requests.get(url, impersonate=impersonate.strip(), timeout=15,
+            resp = cffi_requests.get(url, impersonate=impersonate.strip(), timeout=remaining,
                                      headers={'Accept-Language': 'pt-BR,pt;q=0.9'})
         except Exception as e:
             log('cffi %s error: %r' % (impersonate, e))
@@ -228,6 +245,10 @@ def cffi_get(url):
             return resp
 
         log('cffi %s status %s' % (impersonate, resp.status_code))
+
+        if resp.status_code not in CFFI_RETRY_STATUS:
+            # not a bot block (e.g. 404): another fingerprint won't help
+            return None
 
     return None
 
@@ -251,8 +272,24 @@ def custom_cache_set(url, content):
         log('custom cache error: %r' % e)
 
 
+def custom_failed_recently(url):
+    """ True if extracting `url` failed less than DELAY seconds ago """
+    try:
+        data = caching.default_cache[CUSTOM_FAIL_PREFIX + url]
+        return data is not None and time.time() - float(data) < DELAY
+    except (KeyError, ValueError, TypeError):
+        return False
+
+
+def custom_failed_set(url):
+    try:
+        caching.default_cache[CUSTOM_FAIL_PREFIX + url] = str(time.time()).encode('ascii')
+    except Exception as e:
+        log('custom cache error: %r' % e)
+
+
 @custom_extractor('investing.com')
-def extract_investing_com(url):
+def extract_investing_com(url, deadline=None):
     """ Extract article body from investing.com (article in div.WYSIWYG*).
     Uses curl_cffi to impersonate a browser TLS fingerprint (bypasses Cloudflare
     bot detection). Tries the regular page first, then the AMP version
@@ -260,13 +297,16 @@ def extract_investing_com(url):
     try:
         from bs4 import BeautifulSoup
 
+        if deadline is None:
+            deadline = time.time() + EXTRACTOR_TIMEOUT
+
         parsed = urlparse(url)
         amp_netloc = 'm.' + parsed.netloc if not parsed.netloc.startswith('m.') else parsed.netloc
         amp_url = parsed._replace(netloc=amp_netloc, query='ampMode=1').geturl()
 
         soup = el = None
         for candidate in (url, amp_url):
-            resp = cffi_get(candidate)
+            resp = cffi_get(candidate, deadline)
             if resp is None:
                 continue
 
@@ -307,13 +347,13 @@ def extract_investing_com(url):
 
 
 @custom_extractor('moneytimes.com.br')
-def extract_moneytimes(url):
+def extract_moneytimes(url, deadline=None):
     """ Extract article body from moneytimes.com.br.
     Selectors: div.single_block_news_image (lead image) + div.single_block_news_text (body). """
     try:
         from bs4 import BeautifulSoup
 
-        resp = cffi_get(url)
+        resp = cffi_get(url, deadline)
         if resp is None:
             return None
 
@@ -355,10 +395,13 @@ def ItemFill(item, options, feedurl='/', fast=False):
             # including in fast (cache-only) mode
             content = custom_cache_get(item.link) if not options.force else None
 
-            if content is None and not fast:
-                content = extractor(item.link)
+            if content is None and not fast and (options.force or not custom_failed_recently(item.link)):
+                content = extractor(item.link, time.time() + EXTRACTOR_TIMEOUT)
                 if content:
                     custom_cache_set(item.link, content)
+                else:
+                    # don't pay the full timeout again on every refresh
+                    custom_failed_set(item.link)
 
             if content:
                 item.content = content

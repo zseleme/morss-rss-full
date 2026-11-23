@@ -94,3 +94,41 @@ def test_cffi_get_returns_none_when_all_blocked(mock_cffi):
 
 def test_custom_extractor_registered():
     assert 'investing.com' in CUSTOM_EXTRACTORS
+
+
+@patch('morss.morss.cffi_requests')
+def test_cffi_get_does_not_retry_non_block_status(mock_cffi):
+    mock_cffi.get.return_value = FakeResponse('', 404)
+    assert cffi_get('https://br.investing.com/news/x') is None
+    assert mock_cffi.get.call_count == 1
+
+
+@patch('morss.morss.cffi_requests')
+def test_cffi_get_respects_deadline(mock_cffi):
+    import time
+    assert cffi_get('https://br.investing.com/news/x', deadline=time.time() - 1) is None
+    mock_cffi.get.assert_not_called()
+
+
+@patch('morss.morss.cffi_requests')
+def test_cffi_get_timeout_bounded_by_deadline(mock_cffi):
+    import time
+    mock_cffi.get.return_value = FakeResponse(SAMPLE_AMP_HTML)
+    cffi_get('https://br.investing.com/news/x', deadline=time.time() + 3)
+    assert 0 < mock_cffi.get.call_args.kwargs['timeout'] <= 3
+
+
+@patch('morss.morss.cffi_requests')
+def test_itemfill_remembers_failed_extraction(mock_cffi, monkeypatch):
+    from morss import caching, morss
+    monkeypatch.setattr(caching, 'default_cache', caching.CappedDict())
+    mock_cffi.get.return_value = FakeResponse('', 403)
+
+    item = MagicMock(link='https://br.investing.com/news/fail-1')
+    options = morss.Options({})
+    with patch('morss.morss.crawler.adv_get', side_effect=IOError):
+        morss.ItemFill(item, options)
+        calls = mock_cffi.get.call_count
+        assert calls > 0
+        morss.ItemFill(item, options)
+    assert mock_cffi.get.call_count == calls  # second refresh skips the extractor

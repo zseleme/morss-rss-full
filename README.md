@@ -121,6 +121,8 @@ https://rss.example.com/status
 | `MAX_TIME` | 2 | Tempo máximo (s) de busca de artigos |
 | `LIM_ITEM` | 10 | Máximo de itens no feed (demais são descartados) |
 | `LIM_TIME` | — | Tempo máximo total (s) de processamento |
+| `EXTRACTOR_TIMEOUT` | 10 | Tempo máximo (s) de cada extração customizada (todas as URLs e fingerprints somadas) |
+| `IMPERSONATE` | `chrome,safari` | Fingerprints do curl_cffi tentados em ordem nos extratores customizados |
 | `CACHE` | memória | Backend de cache: `redis` ou `diskcache` |
 | `CACHE_SIZE` | 1000 | Número máximo de itens no cache |
 
@@ -130,10 +132,11 @@ Para sites que bloqueiam o crawler padrão, adicione um extrator em `morss/morss
 
 ```python
 @custom_extractor('exemplo.com.br')
-def extract_exemplo(url):
-    from curl_cffi import requests as r
+def extract_exemplo(url, deadline=None):
     from bs4 import BeautifulSoup
-    resp = r.get(url, impersonate='chrome120', timeout=15)
+    resp = cffi_get(url, deadline)  # respeita EXTRACTOR_TIMEOUT e IMPERSONATE
+    if resp is None:
+        return None
     soup = BeautifulSoup(resp.content, 'lxml')
     el = soup.select_one('div.article-content')
     return str(el) if el else None
