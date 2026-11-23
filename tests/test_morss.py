@@ -194,3 +194,16 @@ def test_itemfill_skips_extractor_for_lookalike_domain(mock_cffi, monkeypatch):
     with patch('morss.morss.crawler.adv_get', side_effect=IOError):
         morss.ItemFill(item, morss.Options({}))
     mock_cffi.get.assert_not_called()
+
+
+@pytest.mark.parametrize('value, expected', [
+    ('chrome,safari', ['chrome', 'safari']),
+    (' chrome , safari ,', ['chrome', 'safari']),
+    ('firefox', ['firefox']),
+    ('', ['chrome', 'safari']),
+    (',, ', ['chrome', 'safari']),
+    (None, ['chrome', 'safari']),
+])
+def test_parse_impersonate(value, expected):
+    from morss.morss import parse_impersonate
+    assert parse_impersonate(value) == expected

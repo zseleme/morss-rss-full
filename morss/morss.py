@@ -197,7 +197,13 @@ CUSTOM_EXTRACTORS = {}
 # Browser fingerprints tried in order. Cloudflare blocks outdated ones (e.g.
 # 'chrome120' now gets a 403), so prefer the aliases that track the newest
 # browser version shipped with the installed curl_cffi.
-IMPERSONATE = os.getenv('IMPERSONATE', 'chrome,safari').split(',')
+def parse_impersonate(value, default=('chrome', 'safari')):
+    """ 'chrome, safari,' -> ['chrome', 'safari']; falls back to `default`
+    when nothing usable is left (e.g. empty value) """
+    return [x.strip() for x in (value or '').split(',') if x.strip()] or list(default)
+
+
+IMPERSONATE = parse_impersonate(os.getenv('IMPERSONATE'))
 
 # Overall time budget (in sec) for one custom extraction, across every URL and
 # fingerprint it tries, so a blocked site can't stall the whole feed.
@@ -242,7 +248,7 @@ def cffi_get(url, deadline=None):
             return None
 
         try:
-            resp = cffi_requests.get(url, impersonate=impersonate.strip(), timeout=remaining,
+            resp = cffi_requests.get(url, impersonate=impersonate, timeout=remaining,
                                      headers={'Accept-Language': 'pt-BR,pt;q=0.9'})
         except Exception as e:
             log('cffi %s error: %r' % (impersonate, e))
