@@ -194,6 +194,14 @@ def ItemFix(item, options, feedurl='/'):
 
 CUSTOM_EXTRACTORS = {}
 
+# Browser fingerprints tried in order. Cloudflare blocks outdated ones (e.g.
+# 'chrome120' now gets a 403), so prefer the aliases that track the newest
+# browser version shipped with the installed curl_cffi.
+IMPERSONATE = os.getenv('IMPERSONATE', 'chrome,safari').split(',')
+
+CUSTOM_CACHE_PREFIX = 'custom-extractor:'
+
+
 def custom_extractor(domain_pattern):
     """ Decorator to register a custom extractor for a domain pattern """
     def decorator(func):
@@ -202,26 +210,71 @@ def custom_extractor(domain_pattern):
     return decorator
 
 
+def cffi_get(url):
+    """ GET with curl_cffi, trying each browser fingerprint until one is not
+    blocked. Returns the response, or None if all of them failed. """
+    if cffi_requests is None:
+        return None
+
+    for impersonate in IMPERSONATE:
+        try:
+            resp = cffi_requests.get(url, impersonate=impersonate.strip(), timeout=15,
+                                     headers={'Accept-Language': 'pt-BR,pt;q=0.9'})
+        except Exception as e:
+            log('cffi %s error: %r' % (impersonate, e))
+            continue
+
+        if resp.status_code == 200:
+            return resp
+
+        log('cffi %s status %s' % (impersonate, resp.status_code))
+
+    return None
+
+
+def custom_cache_get(url):
+    try:
+        data = caching.default_cache[CUSTOM_CACHE_PREFIX + url]
+    except KeyError:
+        return None
+
+    if isinstance(data, bytes):
+        data = data.decode('utf-8')
+
+    return data or None
+
+
+def custom_cache_set(url, content):
+    try:
+        caching.default_cache[CUSTOM_CACHE_PREFIX + url] = content.encode('utf-8')
+    except Exception as e:
+        log('custom cache error: %r' % e)
+
+
 @custom_extractor('investing.com')
 def extract_investing_com(url):
-    """ Extract article body from investing.com via AMP version.
-    Uses curl_cffi to impersonate Chrome TLS fingerprint (bypasses Cloudflare bot detection).
-    AMP URL: m.br.investing.com/...?ampMode=1 — simpler HTML, article in div.WYSIWYG* """
+    """ Extract article body from investing.com (article in div.WYSIWYG*).
+    Uses curl_cffi to impersonate a browser TLS fingerprint (bypasses Cloudflare
+    bot detection). Tries the regular page first, then the AMP version
+    (m.br.investing.com/...?ampMode=1). """
     try:
         from bs4 import BeautifulSoup
 
-        if cffi_requests is None:
-            return None
-
-        # convert to AMP URL: br.investing.com -> m.br.investing.com?ampMode=1
         parsed = urlparse(url)
         amp_netloc = 'm.' + parsed.netloc if not parsed.netloc.startswith('m.') else parsed.netloc
         amp_url = parsed._replace(netloc=amp_netloc, query='ampMode=1').geturl()
 
-        resp = cffi_requests.get(amp_url, impersonate='chrome120', timeout=15,
-                                 headers={'Accept-Language': 'pt-BR,pt;q=0.9'})
-        soup = BeautifulSoup(resp.content, 'lxml')
-        el = soup.select_one('div[class*="WYSIWYG"]')
+        soup = el = None
+        for candidate in (url, amp_url):
+            resp = cffi_get(candidate)
+            if resp is None:
+                continue
+
+            soup = BeautifulSoup(resp.content, 'lxml')
+            el = soup.select_one('div[class*="WYSIWYG"]')
+            if el:
+                break
+
         if not el:
             return None
 
@@ -260,11 +313,10 @@ def extract_moneytimes(url):
     try:
         from bs4 import BeautifulSoup
 
-        if cffi_requests is None:
+        resp = cffi_get(url)
+        if resp is None:
             return None
 
-        resp = cffi_requests.get(url, impersonate='chrome120', timeout=15,
-                                 headers={'Accept-Language': 'pt-BR,pt;q=0.9'})
         soup = BeautifulSoup(resp.content, 'lxml')
 
         img_el  = soup.select_one('div.single_block_news_image')
@@ -296,15 +348,22 @@ def ItemFill(item, options, feedurl='/', fast=False):
     log(item.link)
 
     # custom domain extractors
-    if not fast:
-        netloc = urlparse(item.link).netloc
-        for domain, extractor in CUSTOM_EXTRACTORS.items():
-            if domain in netloc:
+    netloc = urlparse(item.link).netloc
+    for domain, extractor in CUSTOM_EXTRACTORS.items():
+        if domain in netloc:
+            # articles don't change once published: reuse previous extractions,
+            # including in fast (cache-only) mode
+            content = custom_cache_get(item.link) if not options.force else None
+
+            if content is None and not fast:
                 content = extractor(item.link)
                 if content:
-                    item.content = content
-                    return True
-                break  # domain matched but extraction failed, fall through to default
+                    custom_cache_set(item.link, content)
+
+            if content:
+                item.content = content
+                return True
+            break  # domain matched but extraction failed, fall through to default
 
     # download
 

@@ -2,13 +2,14 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from morss.morss import CUSTOM_EXTRACTORS, extract_investing_com
+from morss.morss import (CUSTOM_EXTRACTORS, IMPERSONATE, cffi_get,
+                         extract_investing_com)
 
 
 class FakeResponse:
-    def __init__(self, html):
+    def __init__(self, html, status_code=200):
         self.content = html.encode('utf-8')
-        self.status_code = 200
+        self.status_code = status_code
 
 
 SAMPLE_AMP_HTML = """<!DOCTYPE html>
@@ -55,12 +56,40 @@ def test_extract_investing_com_removes_banner(mock_cffi):
 
 
 @patch('morss.morss.cffi_requests')
-def test_extract_investing_com_uses_amp_url(mock_cffi):
+def test_extract_investing_com_tries_regular_url_first(mock_cffi):
     mock_cffi.get.return_value = FakeResponse(SAMPLE_AMP_HTML)
     extract_investing_com('https://br.investing.com/news/test-article-123')
+    assert mock_cffi.get.call_count == 1
+    assert mock_cffi.get.call_args[0][0] == 'https://br.investing.com/news/test-article-123'
+
+
+@patch('morss.morss.cffi_requests')
+def test_extract_investing_com_falls_back_to_amp_url(mock_cffi):
+    mock_cffi.get.side_effect = [
+        FakeResponse('<html><body>no article here</body></html>'),
+        FakeResponse(SAMPLE_AMP_HTML),
+    ]
+    result = extract_investing_com('https://br.investing.com/news/test-article-123')
+    assert 'Parágrafo principal' in result
     called_url = mock_cffi.get.call_args[0][0]
     assert 'm.br.investing.com' in called_url
     assert 'ampMode=1' in called_url
+
+
+@patch('morss.morss.cffi_requests')
+def test_cffi_get_tries_next_fingerprint_when_blocked(mock_cffi):
+    mock_cffi.get.side_effect = [FakeResponse('', 403), FakeResponse(SAMPLE_AMP_HTML)]
+    resp = cffi_get('https://br.investing.com/news/test-article-123')
+    assert resp is not None and resp.status_code == 200
+    used = [call.kwargs['impersonate'] for call in mock_cffi.get.call_args_list]
+    assert used == IMPERSONATE[:2]
+
+
+@patch('morss.morss.cffi_requests')
+def test_cffi_get_returns_none_when_all_blocked(mock_cffi):
+    mock_cffi.get.return_value = FakeResponse('', 403)
+    assert cffi_get('https://br.investing.com/news/test-article-123') is None
+    assert extract_investing_com('https://br.investing.com/news/test-article-123') is None
 
 
 def test_custom_extractor_registered():

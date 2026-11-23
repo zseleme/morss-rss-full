@@ -10,6 +10,10 @@ primary_region = 'gru'
 
 [env]
   PORT = '8080'
+  # seconds spent fetching full articles per request (then cache-only),
+  # and hard limit after which remaining items are dropped
+  MAX_TIME = '15'
+  LIM_TIME = '25'
 
 [http_service]
   internal_port = 8080
