@@ -74,7 +74,14 @@ class RedisCacheHandler(BaseCache):
         self.r = redis.Redis(host=host, port=port, db=db, password=password)
 
     def __getitem__(self, key):
-        return self.r.get(key)
+        data = self.r.get(key)
+
+        if data is None:
+            # behave like a dict: callers (e.g. crawler.CacheHandler.load)
+            # rely on KeyError for cache misses
+            raise KeyError(key)
+
+        return data
 
     def __setitem__(self, key, data):
         self.r.set(key, data)
