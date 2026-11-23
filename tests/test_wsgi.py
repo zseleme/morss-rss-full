@@ -121,3 +121,23 @@ def test_client_ip_falls_back_when_header_missing(monkeypatch):
     from morss.wsgi import client_ip
     monkeypatch.setenv('CLIENT_IP_HEADER', 'CF-Connecting-IP')
     assert client_ip({'REMOTE_ADDR': '10.0.0.1'}) == '10.0.0.1'
+
+
+def test_error_page_escapes_url_and_error(monkeypatch):
+    from morss import wsgi
+
+    def failing_app(environ, start_response):
+        raise ValueError('<img src=x onerror=alert(1)>')
+
+    captured = {}
+
+    def start_response(status, headers, exc_info=None):
+        captured['status'] = status
+
+    environ = {'PATH_INFO': '/"><script>alert(2)</script>', 'QUERY_STRING': '',
+               'REQUEST_URI': '/"><script>alert(2)</script>'}
+    body = b''.join(wsgi.cgi_error_handler(failing_app)(environ, start_response))
+    assert captured['status'].startswith('404')
+    assert b'<img src=x' not in body and b'<script>alert(2)' not in body
+    assert b'&lt;img src=x onerror=alert(1)&gt;' in body
+    assert b'&lt;script&gt;alert(2)' in body

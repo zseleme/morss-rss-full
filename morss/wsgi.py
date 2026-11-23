@@ -454,7 +454,9 @@ def cgi_error_handler(environ, start_response, app):
         headers = {'status': '404 Not Found', 'content-type': 'text/html', 'x-morss-error': error_msg}
         start_response(headers['status'], list(headers.items()), sys.exc_info())
         log('ERROR: %s' % error_msg)
-        html = ERROR_PAGE.format(url=url, error=error_msg).encode('utf-8')
+        # both can carry attacker-controlled text (request path, remote
+        # server's reason phrase in an HTTPError...)
+        html = ERROR_PAGE.format(url=html_escape(url), error=html_escape(error_msg)).encode('utf-8')
         return [html]
 
 
