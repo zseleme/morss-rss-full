@@ -64,6 +64,11 @@ class CappedDict(OrderedDict, BaseCache):
             del self[key]
         OrderedDict.__setitem__(self, key, data)
 
+        # enforce the cap on every write: autotrim's timer thread is started
+        # at import, i.e. in gunicorn's master with --preload, and threads
+        # don't survive fork, so the workers (which hold the cache) never trim
+        self.trim()
+
 
 try:
     import redis # isort:skip

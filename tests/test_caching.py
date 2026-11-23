@@ -61,3 +61,17 @@ def test_diskcache_keeps_article_sized_entries(tmp_path):
     cache.trim()
     assert all('article-%d' % i in cache for i in range(20))
     cache.cache.close()
+
+
+def test_capped_dict_enforces_cap_on_write(monkeypatch):
+    # no autotrim timer involved: gunicorn workers never get one
+    from morss import caching
+    monkeypatch.setattr(caching, 'CACHE_SIZE', 3)
+    cache = caching.CappedDict()
+    for i in range(5):
+        cache['k%d' % i] = b'v'
+    assert list(cache) == ['k2', 'k3', 'k4']
+
+    cache['k2'] = b'v2'  # rewriting moves it to the newest position
+    cache['k5'] = b'v'
+    assert list(cache) == ['k4', 'k2', 'k5']  # k3 was the oldest
