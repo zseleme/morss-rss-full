@@ -27,6 +27,7 @@ import wsgiref.handlers
 import wsgiref.simple_server
 import wsgiref.util
 from collections import deque
+from html import escape as html_escape
 
 import lxml.etree
 
@@ -285,7 +286,10 @@ def cgi_status(environ, start_response):
         status_color = '#2ecc71' if entry['ok'] else '#e74c3c'
         status_label = 'ok' if entry['ok'] else 'erro'
         ts = time.strftime('%H:%M:%S', time.localtime(entry['ts']))
-        url = entry['url'][:70] + ('...' if len(entry['url']) > 70 else '')
+        # url and ip come straight from the request: escape them, the page is
+        # viewed by the (authenticated) admin
+        full_url = str(entry['url'])
+        url = html_escape(full_url[:70] + ('...' if len(full_url) > 70 else ''))
         rows += (
             '<tr>'
             '<td style="white-space:nowrap">%s</td>'
@@ -293,7 +297,7 @@ def cgi_status(environ, start_response):
             '<td style="max-width:380px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="%s">%s</td>'
             '<td><span style="color:%s">%s</span></td>'
             '</tr>'
-        ) % (ts, entry['ip'], entry['url'], url, status_color, status_label)
+        ) % (ts, html_escape(str(entry['ip'])), html_escape(full_url), url, status_color, status_label)
 
     if not rows:
         rows = '<tr><td colspan="4" style="color:#888">Nenhum feed processado ainda.</td></tr>'

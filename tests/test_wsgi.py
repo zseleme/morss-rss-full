@@ -71,3 +71,19 @@ def test_status_custom_user(monkeypatch):
 def test_status_trailing_slash_is_protected(monkeypatch):
     monkeypatch.setenv('STATUS_PASSWORD', 's3cret')
     assert call('/status/')[0].startswith('401')
+
+
+def test_status_escapes_logged_values(monkeypatch):
+    from morss import wsgi
+    monkeypatch.setenv('STATUS_PASSWORD', 's3cret')
+    monkeypatch.setattr(wsgi, '_request_log', wsgi.deque([{
+        'ts': 0, 'ok': True,
+        'url': '/https://x/"><img src=x onerror=alert(1)>',
+        'ip': '<script>alert(2)</script>',
+    }]))
+    status, _, body = call('/status', basic('admin', 's3cret'))
+    assert status.startswith('200')
+    assert b'<img src=x' not in body
+    assert b'<script>alert' not in body
+    assert b'&quot;&gt;&lt;img' in body
+    assert b'&lt;script&gt;alert(2)' in body
