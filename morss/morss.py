@@ -327,6 +327,9 @@ def sanitize_html(content):
                     or (attr.lower() == 'style' and ('expression(' in value or 'javascript:' in value or 'url(' in value))):
                 del el.attrib[attr]
 
+    if not root.text_content().strip() and root.find('.//img') is None and root.find('.//iframe') is None:
+        return None
+
     return lxml.html.tostring(root, encoding='unicode')
 
 
@@ -455,17 +458,20 @@ def ItemFill(item, options, feedurl='/', fast=False):
 
             if content is None and not fast and (options.force or not custom_failed_recently(item.link)):
                 content = extractor(item.link, time.time() + EXTRACTOR_TIMEOUT)
-                if content:
-                    content = sanitize_html(content)
+                content = sanitize_html(content) if content else None
                 if content:
                     custom_cache_set(item.link, content)
                 else:
-                    # don't pay the full timeout again on every refresh
+                    # nothing usable (failed, or empty once sanitized): don't
+                    # pay the full timeout again on every refresh
                     custom_failed_set(item.link)
 
-            if content:
+            else:
                 # also covers entries cached before sanitization existed
-                item.content = sanitize_html(content) or ''
+                content = sanitize_html(content) if content else None
+
+            if content:
+                item.content = content
                 return True
             break  # domain matched but extraction failed, fall through to default
 

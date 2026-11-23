@@ -207,3 +207,47 @@ def test_itemfill_skips_extractor_for_lookalike_domain(mock_cffi, monkeypatch):
 def test_parse_impersonate(value, expected):
     from morss.morss import parse_impersonate
     assert parse_impersonate(value) == expected
+
+
+@pytest.mark.parametrize('content', [
+    '<div class="WYSIWYG"><script>x()</script></div>',
+    '<div><svg><text>icon</text></svg>  </div>',
+    '<div><p> </p><!-- nothing --></div>',
+])
+def test_sanitize_html_returns_none_when_nothing_left(content):
+    from morss.morss import sanitize_html
+    assert sanitize_html(content) is None
+
+
+def test_sanitize_html_keeps_image_only_content():
+    from morss.morss import sanitize_html
+    assert '<img' in sanitize_html('<div><img src="https://e.com/a.jpg"></div>')
+
+
+@patch('morss.morss.cffi_requests')
+def test_itemfill_falls_back_when_extraction_is_empty(mock_cffi, monkeypatch):
+    from morss import caching, morss
+    monkeypatch.setattr(caching, 'default_cache', caching.CappedDict())
+    mock_cffi.get.return_value = FakeResponse('<div class="WYSIWYG"><script>x()</script></div>')
+    item = MagicMock(link='https://br.investing.com/news/empty-1', content='original')
+
+    with patch('morss.morss.crawler.adv_get', side_effect=IOError) as adv_get:
+        morss.ItemFill(item, morss.Options({}))
+
+    adv_get.assert_called_once()  # fell through to the default fetch
+    assert item.content == 'original'
+    assert morss.custom_cache_get(item.link) is None
+    assert morss.custom_failed_recently(item.link)
+
+
+def test_itemfill_falls_back_when_cached_extraction_is_empty(monkeypatch):
+    from morss import caching, morss
+    monkeypatch.setattr(caching, 'default_cache', caching.CappedDict())
+    morss.custom_cache_set('https://br.investing.com/news/empty-2', '<div></div>')
+    item = MagicMock(link='https://br.investing.com/news/empty-2', content='original')
+
+    with patch('morss.morss.crawler.adv_get', side_effect=IOError) as adv_get:
+        morss.ItemFill(item, morss.Options({}), fast=True)
+
+    adv_get.assert_called_once()
+    assert item.content == 'original'
