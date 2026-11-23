@@ -15,12 +15,14 @@
 # You should have received a copy of the GNU Affero General Public License along
 # with this program. If not, see <https://www.gnu.org/licenses/>.
 
-import traceback
+import base64
+import hmac
 import mimetypes
 import os.path
 import re
 import sys
 import time
+import traceback
 import wsgiref.handlers
 import wsgiref.simple_server
 import wsgiref.util
@@ -341,10 +343,46 @@ dispatch_table = {
     }
 
 
+def status_authorized(environ):
+    """ HTTP Basic auth check for /status. Credentials come from the
+    STATUS_USER (default: admin) and STATUS_PASSWORD env vars. """
+    password = os.getenv('STATUS_PASSWORD')
+    user = os.getenv('STATUS_USER', 'admin')
+
+    scheme, _, value = environ.get('HTTP_AUTHORIZATION', '').partition(' ')
+    if scheme.lower() != 'basic':
+        return False
+
+    try:
+        given_user, _, given_password = base64.b64decode(value.strip()).decode('utf-8').partition(':')
+    except Exception:
+        return False
+
+    user_ok = hmac.compare_digest(given_user.encode('utf-8'), user.encode('utf-8'))
+    password_ok = hmac.compare_digest(given_password.encode('utf-8'), password.encode('utf-8'))
+    return user_ok and password_ok
+
+
+def cgi_protected_status(environ, start_response):
+    if not os.getenv('STATUS_PASSWORD'):
+        # no password configured: keep the page disabled rather than public
+        start_response('404 Not Found', [('content-type', 'text/plain; charset=utf-8')])
+        return [b'Not Found']
+
+    if not status_authorized(environ):
+        start_response('401 Unauthorized', [
+            ('content-type', 'text/plain; charset=utf-8'),
+            ('www-authenticate', 'Basic realm="morss status", charset="UTF-8"'),
+        ])
+        return [b'Unauthorized']
+
+    return cgi_status(environ, start_response)
+
+
 @middleware
 def cgi_dispatcher(environ, start_response, app):
-    if request_uri(environ) == '/status':
-        return cgi_status(environ, start_response)
+    if request_uri(environ).split('?', 1)[0].rstrip('/') == '/status':
+        return cgi_protected_status(environ, start_response)
 
     url, options = cgi_parse_environ(environ)
 
