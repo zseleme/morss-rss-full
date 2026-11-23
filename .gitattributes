@@ -1,0 +1,6 @@
+# The app runs on Linux (Docker/Fly): keep LF line endings even on Windows checkouts.
+# A CRLF morss-helper makes /bin/sh fail with "set: illegal option -".
+* text=auto eol=lf
+*.ico binary
+*.png binary
+*.jpg binary
