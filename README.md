@@ -129,10 +129,13 @@ https://rss.example.com/status
 
 | Variável | Padrão | Descrição |
 |----------|--------|-----------|
-| `MAX_ITEM` | 5 | Máximo de artigos buscados por requisição |
-| `MAX_TIME` | 2 | Tempo máximo (s) de busca de artigos |
+| `MAX_ITEM` | 5 | Itens cujo texto completo é buscado; os seguintes só entram se já estiverem no cache |
+| `MAX_TIME` | 2 | Depois desse tempo (s), os itens restantes só entram se já estiverem no cache |
 | `LIM_ITEM` | 10 | Máximo de itens no feed (demais são descartados) |
-| `LIM_TIME` | — | Tempo máximo total (s) de processamento |
+| `LIM_TIME` | 2.5 | Depois desse tempo (s), os itens restantes são descartados |
+| `GUNICORN_WORKERS` | 1 | Processos do gunicorn (cada um com seu próprio cache em memória) |
+| `GUNICORN_THREADS` | 4 | Threads por processo, ou seja, requisições atendidas em paralelo |
+| `WORKER_TIMEOUT` | 120 | Tempo máximo (s) de uma requisição antes do gunicorn reiniciar o worker |
 | `EXTRACTOR_TIMEOUT` | 10 | Tempo máximo (s) de cada extração customizada (todas as URLs e fingerprints somadas) |
 | `IMPERSONATE` | `chrome,safari` | Fingerprints do curl_cffi tentados em ordem nos extratores customizados |
 | `CLIENT_IP_HEADER` | `Fly-Client-IP` no Fly, senão nenhum | Cabeçalho confiável com o IP do cliente no `/status` (ex.: `CF-Connecting-IP` atrás do Cloudflare, `X-Forwarded-For` atrás de nginx/Traefik). Sem ele, usa o IP da conexão |

@@ -312,7 +312,8 @@ def cgi_status(environ, start_response):
         cache_info = 'n/a'
 
     rows = ''
-    for entry in reversed(_request_log):
+    # snapshot: other threads (gthread worker) append while we iterate
+    for entry in reversed(list(_request_log)):
         status_color = '#2ecc71' if entry['ok'] else '#e74c3c'
         status_label = 'ok' if entry['ok'] else 'erro'
         ts = time.strftime('%H:%M:%S', time.localtime(entry['ts']))

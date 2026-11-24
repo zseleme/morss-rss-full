@@ -53,21 +53,32 @@ class BaseCache:
 
 
 class CappedDict(OrderedDict, BaseCache):
+    # shared by gunicorn's threads (gthread worker) and autotrim's timer: the
+    # check-then-delete in __setitem__ and the trim loop must not interleave
+    # (KeyError, or "OrderedDict mutated during iteration")
+    _lock = threading.RLock()
+
     def trim(self):
-        if CACHE_SIZE >= 0:
-            for i in range( max( len(self) - CACHE_SIZE , 0 )):
-                self.popitem(False)
+        with self._lock:
+            if CACHE_SIZE >= 0:
+                for i in range( max( len(self) - CACHE_SIZE , 0 )):
+                    self.popitem(False)
+
+    def __getitem__(self, key):
+        with self._lock:
+            return OrderedDict.__getitem__(self, key)
 
     def __setitem__(self, key, data):
-        # https://docs.python.org/2/library/collections.html#ordereddict-examples-and-recipes
-        if key in self:
-            del self[key]
-        OrderedDict.__setitem__(self, key, data)
+        with self._lock:
+            # https://docs.python.org/2/library/collections.html#ordereddict-examples-and-recipes
+            if key in self:
+                del self[key]
+            OrderedDict.__setitem__(self, key, data)
 
-        # enforce the cap on every write: autotrim's timer thread is started
-        # at import, i.e. in gunicorn's master with --preload, and threads
-        # don't survive fork, so the workers (which hold the cache) never trim
-        self.trim()
+            # enforce the cap on every write: autotrim's timer thread is started
+            # at import, i.e. in gunicorn's master with --preload, and threads
+            # don't survive fork, so the workers (which hold the cache) never trim
+            self.trim()
 
 
 try:

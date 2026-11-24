@@ -14,12 +14,20 @@ gunicorn_extra_opts() {
 	fi
 }
 
+gunicorn_opts() {
+	# threads > 1 selects the gthread worker: requests no longer wait for each
+	# other (a feed can take up to LIM_TIME). Extra workers would each hold a
+	# separate in-memory cache, threads share one.
+	echo "--bind 0.0.0.0:${PORT:-8000} --preload --access-logfile - --timeout ${WORKER_TIMEOUT:-120}" \
+		"--workers ${GUNICORN_WORKERS:-1} --threads ${GUNICORN_THREADS:-4} $(gunicorn_extra_opts)"
+}
+
 run() {
-	gunicorn --bind 0.0.0.0:${PORT:-8000} --preload --access-logfile - --timeout ${WORKER_TIMEOUT:-120} $(gunicorn_extra_opts) morss
+	gunicorn $(gunicorn_opts) morss
 }
 
 daemon() {
-	gunicorn --bind 0.0.0.0:${PORT:-8000} --preload --access-logfile - --daemon --timeout ${WORKER_TIMEOUT:-120} $(gunicorn_extra_opts) morss
+	gunicorn $(gunicorn_opts) --daemon morss
 }
 
 reload() {

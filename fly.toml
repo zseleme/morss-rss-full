@@ -10,12 +10,22 @@ primary_region = 'gru'
 
 [env]
   PORT = '8080'
-  # fetch full articles for up to MAX_ITEM items (default 5; the rest are
-  # cache-only and dropped when not cached), within MAX_TIME seconds per
-  # request; LIM_TIME is the hard limit after which remaining items are dropped
+  # per request, items are handled in feed order:
+  # - beyond LIM_ITEM items or after LIM_TIME seconds: dropped
+  # - beyond MAX_ITEM items or after MAX_TIME seconds: full text only if
+  #   already cached, otherwise dropped
+  # - the rest: full text fetched
+  # MAX_ITEM = LIM_ITEM, so the feed keeps 10 items, all fetched; only time
+  # (15s soft, 25s hard) can make later ones cache-only or drop them
   MAX_ITEM = '10'
+  LIM_ITEM = '10'
   MAX_TIME = '15'
   LIM_TIME = '25'
+  # 4 threads in one worker: a slow feed (up to LIM_TIME) no longer blocks
+  # every other request and the health check; threads keep the memory of a
+  # single process (256mb VM) and share its in-memory cache
+  GUNICORN_WORKERS = '1'
+  GUNICORN_THREADS = '4'
 
 [http_service]
   internal_port = 8080

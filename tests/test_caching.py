@@ -102,3 +102,30 @@ def test_crawler_uses_swapped_default_cache(monkeypatch):
     swapped = caching.CappedDict()  # empty, i.e. falsy
     monkeypatch.setattr(caching, 'default_cache', swapped)
     assert crawler.CacheHandler().cache is swapped
+
+
+def test_capped_dict_concurrent_writes(monkeypatch):
+    # gthread worker: several requests write to the same cache at once
+    import threading
+
+    from morss import caching
+    monkeypatch.setattr(caching, 'CACHE_SIZE', 50)
+    cache = caching.CappedDict()
+    errors = []
+
+    def writer(n):
+        try:
+            for i in range(2000):
+                cache['k%d' % (i % 80)] = b'%d' % n
+                cache.get('k%d' % ((i + n) % 80))
+        except Exception as e:  # pylint: disable=broad-except
+            errors.append(e)
+
+    threads = [threading.Thread(target=writer, args=(n,)) for n in range(8)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    assert not errors
+    assert len(cache) <= 50
