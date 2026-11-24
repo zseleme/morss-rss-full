@@ -33,10 +33,10 @@ import lxml.etree
 
 try:
     # python 2
-    from urllib import unquote
+    from urllib import unquote, urlencode
 except ImportError:
     # python 3
-    from urllib.parse import unquote
+    from urllib.parse import unquote, urlencode
 
 from . import caching, crawler, readabilite
 from .morss import (DELAY, TIMEOUT, FeedFetch, FeedFormat, FeedGather,
@@ -101,7 +101,37 @@ def cgi_parse_environ(environ):
     # init
     options = Options(parse_options(raw_options))
 
+    url = expand_shortcut(url, options)
+
     return (url, options)
+
+
+INSTAGRAM_SHORTCUT = re.compile(r'^instagram/([^/?#]*)/?$')
+INSTAGRAM_USERNAME = re.compile(r'^[A-Za-z0-9._]{1,30}$')
+
+
+def expand_shortcut(url, options):
+    """ instagram/<user> -> RSS-Bridge feed of that public profile (morss
+    can't read Instagram itself). Other urls are returned as is. """
+    match = INSTAGRAM_SHORTCUT.match(url)
+
+    if not match:
+        return url
+
+    username = match.group(1)
+
+    if not INSTAGRAM_USERNAME.match(username):
+        raise MorssException('Invalid Instagram username')
+
+    # post pages are behind Instagram's login wall: fetching them only slows
+    # the feed down, RSS-Bridge already provides the full caption and images
+    options['proxy'] = True
+
+    bridge = os.getenv('RSSBRIDGE_URL', 'https://rss-bridge.org/bridge01/')
+    query = urlencode([('action', 'display'), ('bridge', 'Instagram'), ('context', 'Username'),
+                       ('u', username), ('format', 'Atom')])
+
+    return bridge + ('&' if '?' in bridge else '?') + query
 
 
 def cgi_app(environ, start_response):

@@ -141,3 +141,64 @@ def test_error_page_escapes_url_and_error(monkeypatch):
     assert b'<img src=x' not in body and b'<script>alert(2)' not in body
     assert b'&lt;img src=x onerror=alert(1)&gt;' in body
     assert b'&lt;script&gt;alert(2)' in body
+
+
+BRIDGE_QS = 'action=display&bridge=Instagram&context=Username&u=%s&format=Atom'
+
+
+def parse(path):
+    from morss.wsgi import cgi_parse_environ
+    return cgi_parse_environ({'PATH_INFO': path, 'RAW_URI': path, 'QUERY_STRING': ''})
+
+
+@pytest.mark.parametrize('path', ['/instagram/bruna.theoneimoveis', '/instagram/bruna.theoneimoveis/'])
+def test_instagram_shortcut(monkeypatch, path):
+    monkeypatch.delenv('RSSBRIDGE_URL', raising=False)
+    url, options = parse(path)
+    assert url == 'https://rss-bridge.org/bridge01/?' + BRIDGE_QS % 'bruna.theoneimoveis'
+    assert options.proxy is True
+
+
+def test_instagram_shortcut_keeps_options(monkeypatch):
+    monkeypatch.delenv('RSSBRIDGE_URL', raising=False)
+    url, options = parse('/:format=json:force/instagram/nasa')
+    assert url.endswith(BRIDGE_QS % 'nasa')
+    assert options.format == 'json' and options.force is True and options.proxy is True
+
+
+@pytest.mark.parametrize('bridge, expected', [
+    ('https://bridge.example.com/', 'https://bridge.example.com/?'),
+    ('https://bridge.example.com/index.php?x=1', 'https://bridge.example.com/index.php?x=1&'),
+])
+def test_instagram_shortcut_custom_bridge(monkeypatch, bridge, expected):
+    monkeypatch.setenv('RSSBRIDGE_URL', bridge)
+    url, _ = parse('/instagram/nasa')
+    assert url == expected + BRIDGE_QS % 'nasa'
+
+
+@pytest.mark.parametrize('username', ['', 'a&format=Html', 'a b', 'x' * 31, '..%2F'])
+def test_instagram_shortcut_rejects_invalid_username(username):
+    from morss.morss import MorssException
+    with pytest.raises(MorssException):
+        parse('/instagram/' + username)
+
+
+@pytest.mark.parametrize('path', ['/br.investing.com/rss/news_285.rss', '/https://instagram.com/nasa',
+                                  '/www.instagram.com/nasa', '/instagram/nasa/reels'])
+def test_other_urls_untouched(path):
+    url, options = parse(path)
+    assert url == path[1:]
+    assert not options.proxy
+
+
+def test_instagram_invalid_username_returns_error_page():
+    from morss.wsgi import application
+    captured = {}
+
+    def start_response(status, headers, exc_info=None):
+        captured['status'] = status
+
+    environ = {'PATH_INFO': '/instagram/a&b', 'RAW_URI': '/instagram/a&b', 'QUERY_STRING': ''}
+    body = b''.join(application(environ, start_response))
+    assert captured['status'].startswith('404')
+    assert b'Invalid Instagram username' in body

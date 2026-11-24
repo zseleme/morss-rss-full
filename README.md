@@ -101,6 +101,18 @@ https://rss.example.com/br.investing.com/rss/news_285.rss
 https://rss.example.com/www.moneytimes.com.br/feed/
 ```
 
+### Perfil público do Instagram
+
+O morss não lê o Instagram diretamente: o atalho abaixo monta o feed do perfil
+via [RSS-Bridge](https://github.com/RSS-Bridge/rss-bridge) (instância pública
+`rss-bridge.org/bridge01` por padrão, configurável com `RSSBRIDGE_URL`), já no
+modo `:proxy`, porque as páginas dos posts exigem login:
+
+```
+https://rss.example.com/instagram/nasa
+https://rss.example.com/:format=json/instagram/nasa
+```
+
 ### Forçar atualização (ignorar cache)
 
 ```
@@ -124,6 +136,7 @@ https://rss.example.com/status
 | `EXTRACTOR_TIMEOUT` | 10 | Tempo máximo (s) de cada extração customizada (todas as URLs e fingerprints somadas) |
 | `IMPERSONATE` | `chrome,safari` | Fingerprints do curl_cffi tentados em ordem nos extratores customizados |
 | `CLIENT_IP_HEADER` | `Fly-Client-IP` no Fly, senão nenhum | Cabeçalho confiável com o IP do cliente no `/status` (ex.: `CF-Connecting-IP` atrás do Cloudflare, `X-Forwarded-For` atrás de nginx/Traefik). Sem ele, usa o IP da conexão |
+| `RSSBRIDGE_URL` | `https://rss-bridge.org/bridge01/` | Instância do RSS-Bridge usada pelo atalho `/instagram/<usuário>` |
 | `CACHE` | memória | Backend de cache: `redis` ou `diskcache` |
 | `CACHE_SIZE` | 1000 | Número máximo de itens no cache em memória |
 | `DISKCACHE_SIZE` | 104857600 (100 MB) | Tamanho máximo (bytes) do cache com `CACHE=diskcache` |
