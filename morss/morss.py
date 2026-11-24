@@ -501,6 +501,12 @@ def ItemFill(item, options, feedurl='/', fast=False, deadline=None):
                 # also covers entries cached before sanitization existed
                 content = sanitize_html(content) if content else None
 
+            if not content and options.force:
+                # :force skipped the cache to re-extract: if that failed, the
+                # previous extraction is still better than readability
+                content = custom_cache_get(item.link)
+                content = sanitize_html(content) if content else None
+
             if content:
                 item.content = content
                 return True
@@ -568,6 +574,14 @@ def ItemBefore(item, options):
     return item
 
 
+def html_output(options):
+    """ Whether the feed can end up rendered as HTML on the morss origin: the
+    HTML view (:format=html, or rss through www/sheet.xsl). JSON, CSV and
+    plain text aren't, and sanitizing would only add entities to them. """
+    return not (options.format in ('json', 'csv') or options.callback
+                or options.txt or options.silent)
+
+
 def ItemAfter(item, options):
     if options.clip and item.desc and item.content:
         item.content = item.desc + "<br/><br/><hr/><br/><br/>" + item.content
@@ -585,11 +599,12 @@ def ItemAfter(item, options):
 
     # the HTML view (www/sheet.xsl) puts these in the page with innerHTML and
     # in an href: sanitize every item, not only custom extractions
-    if item.desc:
-        item.desc = sanitize_html(item.desc) or ''
+    if html_output(options):
+        if item.desc:
+            item.desc = sanitize_html(item.desc) or ''
 
-    if item.content:
-        item.content = sanitize_html(item.content) or ''
+        if item.content:
+            item.content = sanitize_html(item.content) or ''
 
     if item.link and is_unsafe_url(item.link):
         item.link = ''

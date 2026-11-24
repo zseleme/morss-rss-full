@@ -47,7 +47,7 @@ setup(
         'full': ['redis', 'diskcache', 'gunicorn', 'setproctitle'],
         'dev': ['pylint', 'pyenchant', 'pytest', 'pytest-cov'],
     },
-    python_requires = '>=2.7',
+    python_requires = '>=3.6',
     package_data = {package_name: ['feedify.ini']},
     data_files = [
         ('share/' + package_name, ['README.md', 'LICENSE']),

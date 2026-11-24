@@ -40,7 +40,7 @@ except ImportError:
 
 from . import caching, crawler, readabilite
 from .morss import (DELAY, TIMEOUT, FeedFetch, FeedFormat, FeedGather,
-                    MorssException, Options, log)
+                    MorssException, Options, log, sanitize_html)
 from .util import data_path
 
 PORT = int(os.getenv('PORT', 8000))
@@ -278,7 +278,9 @@ def cgi_get(environ, start_response):
                 output = lxml.etree.tostring(html.getroottree(), encoding='utf-8', method='html')
 
             else: # i.e. options['get'] == 'article'
-                output = readabilite.get_article(req['data'], url=req['url'], encoding_in=req['encoding'], encoding_out='utf-8', debug=options.debug)
+                output = readabilite.get_article(req['data'], url=req['url'], encoding_in=req['encoding'], encoding_out='unicode', debug=options.debug)
+                output = (sanitize_html(output) or '') if output else ''
+                output = output.encode('utf-8')
 
         elif req['contenttype'] in crawler.MIMETYPE['xml'] + crawler.MIMETYPE['rss'] + crawler.MIMETYPE['json']:
             output = req['data']
@@ -290,7 +292,16 @@ def cgi_get(environ, start_response):
         raise MorssException('no :get option passed')
 
     # return html page
-    headers = {'status': '200 OK', 'content-type': req['contenttype'], 'X-Frame-Options': 'SAMEORIGIN'} # SAMEORIGIN to avoid potential abuse
+    headers = {
+        'status': '200 OK',
+        'content-type': req['contenttype'],
+        'X-Frame-Options': 'SAMEORIGIN', # SAMEORIGIN to avoid potential abuse
+        # remote content (a page, or xml that can embed xhtml scripts) shown
+        # on the morss origin, where /status credentials live: sandbox makes
+        # it a script-less, unique-origin document, whatever slipped through
+        'Content-Security-Policy': "sandbox; script-src 'none'; object-src 'none'",
+        'X-Content-Type-Options': 'nosniff',
+        }
     start_response(headers['status'], list(headers.items()))
     return [output]
 

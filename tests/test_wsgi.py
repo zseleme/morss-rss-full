@@ -202,3 +202,37 @@ def test_instagram_invalid_username_returns_error_page():
     body = b''.join(application(environ, start_response))
     assert captured['status'].startswith('404')
     assert b'Invalid Instagram username' in body
+
+
+def get(path, page):
+    from unittest.mock import patch
+
+    from morss import wsgi
+    captured = {}
+
+    def start_response(status, headers):
+        captured['headers'] = dict(headers)
+
+    req = {'contenttype': 'text/html', 'data': page, 'encoding': 'utf-8', 'url': 'https://e.com/a'}
+    with patch('morss.wsgi.crawler.adv_get', return_value=req):
+        body = b''.join(wsgi.cgi_get({'PATH_INFO': path, 'RAW_URI': path, 'QUERY_STRING': ''}, start_response))
+    return captured['headers'], body
+
+
+EVIL_PAGE = ('<html><body><article>' + '<p>' + 'palavra ' * 80 + '</p>' * 1
+             + '<p><img src="x" onerror="fetch(\'/status\')"><a href="javascript:alert(1)">l</a></p>'
+             + '</article></body></html>').encode('utf-8')
+
+
+def test_get_article_is_sanitized():
+    headers, body = get('/:get=article/https://e.com/a', EVIL_PAGE)
+    assert b'palavra' in body
+    assert b'onerror' not in body and b'javascript:' not in body
+    assert 'sandbox' in headers['Content-Security-Policy']
+
+
+def test_get_page_is_sandboxed():
+    headers, body = get('/:get=page/https://e.com/a', EVIL_PAGE)
+    assert b'palavra' in body
+    assert 'sandbox' in headers['Content-Security-Policy']
+    assert "script-src 'none'" in headers['Content-Security-Policy']

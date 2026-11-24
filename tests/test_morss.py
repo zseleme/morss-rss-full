@@ -411,3 +411,36 @@ def test_feedgather_passes_lim_time_deadline(monkeypatch):
     before = time.time()
     morss.FeedGather(rss, 'https://example.com/feed', morss.Options({}))
     assert seen and before + 5 <= seen[0] <= time.time() + 5
+
+
+@pytest.mark.parametrize('opts', [{'format': 'json'}, {'format': 'csv'}, {'txt': True}, {'callback': 'cb'}])
+def test_itemafter_leaves_non_html_outputs_alone(opts):
+    from morss import morss
+    item = MagicMock(link='https://e.com/a', desc='a < b & c', content='<b>x</b> & y')
+    morss.ItemAfter(item, morss.Options(opts))
+    assert item.desc == 'a < b & c'
+    assert item.content == '<b>x</b> & y'
+
+
+@pytest.mark.parametrize('opts', [{}, {'format': 'html'}])
+def test_itemafter_sanitizes_html_outputs(opts):
+    from morss import morss
+    item = MagicMock(link='https://e.com/a', desc='<img src=x onerror=alert(1)>t', content=None)
+    morss.ItemAfter(item, morss.Options(opts))
+    assert 'onerror' not in item.desc
+
+
+@patch('morss.morss.cffi_requests')
+def test_itemfill_force_keeps_cached_extraction_on_failure(mock_cffi, monkeypatch):
+    from morss import caching, morss
+    monkeypatch.setattr(caching, 'default_cache', caching.CappedDict())
+    mock_cffi.get.return_value = FakeResponse('', 403)
+    morss.custom_cache_set('https://br.investing.com/news/force-1', '<p>artigo salvo</p>')
+    item = MagicMock(link='https://br.investing.com/news/force-1', content='original')
+
+    with patch('morss.morss.crawler.adv_get') as adv_get:
+        assert morss.ItemFill(item, morss.Options({'force': True})) is True
+
+    assert mock_cffi.get.called  # did try to re-extract
+    adv_get.assert_not_called()
+    assert item.content == '<p>artigo salvo</p>'
