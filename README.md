@@ -137,10 +137,10 @@ https://rss.example.com/status
 | `IMPERSONATE` | `chrome,safari` | Fingerprints do curl_cffi tentados em ordem nos extratores customizados |
 | `CLIENT_IP_HEADER` | `Fly-Client-IP` no Fly, senão nenhum | Cabeçalho confiável com o IP do cliente no `/status` (ex.: `CF-Connecting-IP` atrás do Cloudflare, `X-Forwarded-For` atrás de nginx/Traefik). Sem ele, usa o IP da conexão |
 | `RSSBRIDGE_URL` | `https://rss-bridge.org/bridge01/` | Instância do RSS-Bridge usada pelo atalho `/instagram/<usuário>` |
-| `CACHE` | memória | Backend de cache: `redis` ou `diskcache` |
+| `CACHE` | `memory` | Backend de cache: `memory`, `redis` ou `diskcache` |
 | `CACHE_SIZE` | 1000 | Número máximo de itens no cache em memória |
 | `DISKCACHE_SIZE` | 104857600 (100 MB) | Tamanho máximo (bytes) do cache com `CACHE=diskcache` |
-| `REDIS_TTL` | 604800 (7 dias) | Validade (s) das entradas com `CACHE=redis`; `0` = nunca expiram |
+| `REDIS_TTL` | 604800 (7 dias) | Validade (s) das entradas com `CACHE=redis`; `0` ou negativo = nunca expiram |
 
 ### Adicionar extrator customizado
 

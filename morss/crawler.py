@@ -39,7 +39,7 @@ from io import BytesIO, StringIO
 
 import chardet
 
-from .caching import default_cache
+from . import caching
 
 try:
     # python 2
@@ -485,7 +485,10 @@ class CacheHandler(BaseHandler):
     handler_order = 499
 
     def __init__(self, cache=None, force_min=None, force_max=None, policy=None):
-        self.cache = cache or default_cache
+        # looked up at call time, not import time, so that swapping
+        # caching.default_cache (e.g. morss.process(cache=...)) takes effect;
+        # `is None` because an empty cache (e.g. CappedDict) is falsy
+        self.cache = cache if cache is not None else caching.default_cache
         self.force_min = force_min
         self.force_max = force_max
         self.policy = policy # can be cached/refresh/offline/None (default)

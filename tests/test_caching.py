@@ -75,3 +75,30 @@ def test_capped_dict_enforces_cap_on_write(monkeypatch):
     cache['k2'] = b'v2'  # rewriting moves it to the newest position
     cache['k5'] = b'v'
     assert list(cache) == ['k4', 'k2', 'k5']  # k3 was the oldest
+
+
+def test_redis_negative_ttl_never_expires(redis_cache):
+    # redis rejects ex <= 0 ("invalid expire time"): every write would fail
+    redis_cache.ttl = -1
+    redis_cache['k'] = b'v'
+    assert redis_cache.r.expiry['k'] is None
+
+
+@pytest.mark.parametrize('backend', [None, '', 'memory', ' Memory '])
+def test_make_cache_memory(backend):
+    from morss import caching
+    assert isinstance(caching.make_cache(backend), caching.CappedDict)
+
+
+def test_make_cache_rejects_unknown_backend():
+    from morss import caching
+    with pytest.raises(ValueError, match='CACHE'):
+        caching.make_cache('reddis')
+
+
+def test_crawler_uses_swapped_default_cache(monkeypatch):
+    # process(cache=...) swaps caching.default_cache after crawler is imported
+    from morss import caching
+    swapped = caching.CappedDict()  # empty, i.e. falsy
+    monkeypatch.setattr(caching, 'default_cache', swapped)
+    assert crawler.CacheHandler().cache is swapped

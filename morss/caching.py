@@ -94,7 +94,8 @@ class RedisCacheHandler(BaseCache):
     def __setitem__(self, key, data):
         # without an expiry, entries (e.g. one article body per extracted URL)
         # would pile up forever: redis has no size cap of its own here
-        self.r.set(key, data, ex=self.ttl or None)
+        # redis rejects ex <= 0: 0 (or a negative value) means "never expire"
+        self.r.set(key, data, ex=self.ttl if self.ttl and self.ttl > 0 else None)
 
 
 try:
@@ -120,9 +121,14 @@ class DiskCacheHandler(BaseCache):
         self.cache.set(key, data)
 
 
-if 'CACHE' in os.environ:
-    if os.environ['CACHE'] == 'redis':
-        default_cache = RedisCacheHandler(
+def make_cache(backend):
+    """ Cache for the CACHE env var: 'redis', 'diskcache' or 'memory' (also
+    used when unset). Anything else is a config error, reported as such
+    rather than as a NameError on default_cache. """
+    backend = (backend or 'memory').strip().lower()
+
+    if backend == 'redis':
+        return RedisCacheHandler(
             host = os.getenv('REDIS_HOST', 'localhost'),
             port = int(os.getenv('REDIS_PORT', 6379)),
             db = int(os.getenv('REDIS_DB', 0)),
@@ -130,11 +136,16 @@ if 'CACHE' in os.environ:
             ttl = REDIS_TTL
         )
 
-    elif os.environ['CACHE'] == 'diskcache':
-        default_cache = DiskCacheHandler(
+    elif backend == 'diskcache':
+        return DiskCacheHandler(
             directory = os.getenv('DISKCACHE_DIR', '/tmp/morss-diskcache'),
             size_limit = DISKCACHE_SIZE # in bytes (CACHE_SIZE is an item count)
         )
 
-else:
-        default_cache = CappedDict()
+    elif backend == 'memory':
+        return CappedDict()
+
+    raise ValueError('Invalid CACHE=%r (expected redis, diskcache or memory)' % backend)
+
+
+default_cache = make_cache(os.getenv('CACHE'))
