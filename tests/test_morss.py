@@ -292,6 +292,17 @@ def test_sanitize_html_is_idempotent_and_unwrapped():
     assert sanitize_html(once) == once
 
 
+def test_sanitize_html_keeps_data_images():
+    from morss.morss import sanitize_html
+    out = sanitize_html(
+        '<p>t</p><img src="data:image/png;base64,AAAA">'
+        '<a href="data:text/html,<script>x()</script>">l</a>'
+        '<video src="data:video/mp4;base64,AAAA"></video>')
+    assert 'src="data:image/png;base64,AAAA"' in out
+    assert 'href' not in out
+    assert 'data:video' not in out
+
+
 def test_sanitize_html_keeps_cross_origin_iframes():
     from morss.morss import sanitize_html
     out = sanitize_html('<p>x</p><iframe src="https://player.vimeo.com/video/1"></iframe>')
@@ -330,3 +341,73 @@ def test_itemafter_keeps_safe_items():
     assert item.desc == 'Texto simples'
     assert item.content == '<p>corpo</p>'
     assert item.link == 'https://e.com/a'
+
+
+def test_itemfill_extraction_bounded_by_feed_deadline(monkeypatch):
+    import time
+
+    from morss import caching, morss
+    monkeypatch.setattr(caching, 'default_cache', caching.CappedDict())
+    seen = {}
+
+    def extractor(url, deadline=None):
+        seen['deadline'] = deadline
+        return None
+
+    monkeypatch.setitem(morss.CUSTOM_EXTRACTORS, 'investing.com', extractor)
+    item = MagicMock(link='https://br.investing.com/news/deadline-1', content='original')
+    deadline = time.time() + 1
+
+    with patch('morss.morss.crawler.adv_get', side_effect=IOError):
+        morss.ItemFill(item, morss.Options({}), deadline=deadline)
+
+    assert seen['deadline'] == deadline  # not EXTRACTOR_TIMEOUT from now
+
+
+def test_itemfill_skips_fetches_after_feed_deadline(monkeypatch):
+    import time
+
+    from morss import caching, morss
+    monkeypatch.setattr(caching, 'default_cache', caching.CappedDict())
+    calls = []
+    monkeypatch.setitem(morss.CUSTOM_EXTRACTORS, 'investing.com',
+                        lambda url, deadline=None: calls.append(url))
+    item = MagicMock(link='https://br.investing.com/news/deadline-2', content='original')
+
+    with patch('morss.morss.crawler.adv_get') as adv_get:
+        assert morss.ItemFill(item, morss.Options({}), deadline=time.time() - 1) is True
+
+    adv_get.assert_not_called()  # no readability fetch once time is up
+    assert item.content == 'original'
+    # cut short by the feed's limit: the article isn't marked as failing
+    assert not morss.custom_failed_recently(item.link)
+
+
+def test_itemfill_readability_timeout_bounded_by_deadline(monkeypatch):
+    import time
+
+    from morss import morss
+    item = MagicMock(link='https://example.com/a', content='original')
+
+    with patch('morss.morss.crawler.adv_get', side_effect=IOError) as adv_get:
+        morss.ItemFill(item, morss.Options({}), deadline=time.time() + 1)
+
+    assert 0 < adv_get.call_args.kwargs['timeout'] <= 1
+
+
+def test_feedgather_passes_lim_time_deadline(monkeypatch):
+    import time
+
+    from morss import morss
+    monkeypatch.setattr(morss, 'LIM_TIME', 5)
+    seen = []
+    monkeypatch.setattr(morss, 'ItemFill',
+                        lambda item, options, url='/', fast=False, deadline=None: seen.append(deadline))
+    for step in ('ItemBefore', 'ItemAfter'):
+        monkeypatch.setattr(morss, step, lambda item, options: item)
+    monkeypatch.setattr(morss, 'ItemFix', lambda item, options, url: item)
+    rss = MagicMock()
+    rss.items = [MagicMock(link='https://example.com/1', desc=None, content=None)]
+    before = time.time()
+    morss.FeedGather(rss, 'https://example.com/feed', morss.Options({}))
+    assert seen and before + 5 <= seen[0] <= time.time() + 5

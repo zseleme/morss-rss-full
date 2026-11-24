@@ -305,6 +305,8 @@ SANITIZE_MEDIA_TAGS = ('img', 'iframe', 'video', 'audio', 'picture')
 # URLs and srcdoc could, and are removed
 SANITIZE_IFRAME_SRC = ('http://', 'https://')
 UNSAFE_URL_SCHEMES = ('javascript:', 'vbscript:', 'data:')
+# an <img> never runs script, even an svg one: inline images are just content
+SAFE_IMG_DATA_URL = 'data:image/'
 URL_IGNORED_CHARS = re.compile(r'[\s\x00-\x1f]')
 
 
@@ -342,7 +344,8 @@ def sanitize_html(content):
             value = URL_IGNORED_CHARS.sub('', el.attrib[attr]).lower()
 
             if (attr.lower() not in SANITIZE_ATTRIBUTES
-                    or (attr.lower() in SANITIZE_URL_ATTRIBUTES and is_unsafe_url(value))
+                    or (attr.lower() in SANITIZE_URL_ATTRIBUTES and is_unsafe_url(value)
+                        and not (tag == 'img' and attr.lower() == 'src' and value.startswith(SAFE_IMG_DATA_URL)))
                     or (attr.lower() == 'srcset' and any(
                         is_unsafe_url(candidate) for candidate in value.split(',')))
                     or (attr.lower() == 'style' and ('expression(' in value or 'javascript:' in value or 'url(' in value))):
@@ -463,8 +466,9 @@ def extract_moneytimes(url, deadline=None):
         return None
 
 
-def ItemFill(item, options, feedurl='/', fast=False):
-    """ Returns True when it has done its best """
+def ItemFill(item, options, feedurl='/', fast=False, deadline=None):
+    """ Returns True when it has done its best. `deadline` (a time.time()
+    value, e.g. the feed's LIM_TIME) bounds the network calls made here. """
 
     if not item.link:
         log('no link')
@@ -481,13 +485,16 @@ def ItemFill(item, options, feedurl='/', fast=False):
             content = custom_cache_get(item.link) if not options.force else None
 
             if content is None and not fast and (options.force or not custom_failed_recently(item.link)):
-                content = extractor(item.link, time.time() + EXTRACTOR_TIMEOUT)
+                own_deadline = time.time() + EXTRACTOR_TIMEOUT
+                ext_deadline = min(own_deadline, deadline) if deadline is not None else own_deadline
+                content = extractor(item.link, ext_deadline)
                 content = sanitize_html(content) if content else None
                 if content:
                     custom_cache_set(item.link, content)
-                else:
+                elif ext_deadline == own_deadline or time.time() < ext_deadline:
                     # nothing usable (failed, or empty once sanitized): don't
-                    # pay the full timeout again on every refresh
+                    # pay the full timeout again on every refresh. Not when the
+                    # feed's time ran out first: the site isn't to blame then
                     custom_failed_set(item.link)
 
             else:
@@ -512,8 +519,20 @@ def ItemFill(item, options, feedurl='/', fast=False):
     else:
         policy = None
 
+    timeout = TIMEOUT
+
+    if deadline is not None and policy != 'offline':
+        # offline reads the cache only, no time limit needed
+        remaining = deadline - time.time()
+
+        if remaining <= 0:
+            log('feed time limit reached')
+            return True
+
+        timeout = min(TIMEOUT, remaining)
+
     try:
-        req = crawler.adv_get(url=item.link, policy=policy, force_min=24*60*60, timeout=TIMEOUT)
+        req = crawler.adv_get(url=item.link, policy=policy, force_min=24*60*60, timeout=timeout)
 
     except (IOError, HTTPException) as e:
         log('http error')
@@ -663,6 +682,10 @@ def FeedGather(rss, url, options):
         if options.order == 'newest':
             sorted_items = reversed(sorted_items)
 
+    # network calls made for an item must stop at the hard cap too: it is only
+    # checked between items
+    deadline = start_time + lim_time if lim_time >= 0 else None
+
     for i, item in enumerate(sorted_items):
         # hard cap
         if time.time() - start_time > lim_time >= 0 or i + 1 > lim_item >= 0:
@@ -680,13 +703,13 @@ def FeedGather(rss, url, options):
         # soft cap
         if time.time() - start_time > max_time >= 0 or i + 1 > max_item >= 0:
             if not options.proxy:
-                if ItemFill(item, options, url, True) is False:
+                if ItemFill(item, options, url, True, deadline) is False:
                     item.remove()
                     continue
 
         else:
             if not options.proxy:
-                ItemFill(item, options, url)
+                ItemFill(item, options, url, deadline=deadline)
 
         item = ItemAfter(item, options)
 
