@@ -21,6 +21,9 @@ primary_region = 'gru'
   LIM_ITEM = '10'
   MAX_TIME = '15'
   LIM_TIME = '25'
+  # in-memory cache entries (feeds, pages, extracted articles): the 1000
+  # default can outgrow the 256mb VM
+  CACHE_SIZE = '300'
   # 4 threads in one worker: a slow feed (up to LIM_TIME) no longer blocks
   # every other request and the health check; threads keep the memory of a
   # single process (256mb VM) and share its in-memory cache
