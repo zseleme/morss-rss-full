@@ -21,6 +21,9 @@ def get_version():
 
             file.seek(0)
             file.writelines(lines)
+            # the rewrite can be shorter than the original (e.g. CRLF read
+            # as LF): drop the leftover tail, or it ends up as code
+            file.truncate()
 
         # return version number
         return version
