@@ -293,8 +293,14 @@ SANITIZE_DROP_TAGS = {'script', 'style', 'link', 'meta', 'base', 'object', 'embe
                       'applet', 'frame', 'frameset', 'form', 'input', 'button',
                       'textarea', 'select', 'noscript', 'template', 'svg', 'math'}
 SANITIZE_ATTRIBUTES = {'href', 'src', 'alt', 'title', 'width', 'height', 'style',
-                       'class', 'colspan', 'rowspan', 'frameborder', 'allowfullscreen'}
-SANITIZE_URL_ATTRIBUTES = ('href', 'src')
+                       'class', 'colspan', 'rowspan', 'frameborder', 'allowfullscreen',
+                       # <video>/<audio>/<source>/<picture>: without `controls`
+                       # an <audio> doesn't render at all
+                       'controls', 'poster', 'preload', 'loop', 'muted', 'playsinline',
+                       'type', 'srcset', 'sizes', 'media'}
+SANITIZE_URL_ATTRIBUTES = ('href', 'src', 'poster')
+# content made only of these (no text) is still content
+SANITIZE_MEDIA_TAGS = ('img', 'iframe', 'video', 'audio', 'picture')
 # a cross-origin http(s) iframe can't reach the morss page; javascript:/data:
 # URLs and srcdoc could, and are removed
 SANITIZE_IFRAME_SRC = ('http://', 'https://')
@@ -337,10 +343,13 @@ def sanitize_html(content):
 
             if (attr.lower() not in SANITIZE_ATTRIBUTES
                     or (attr.lower() in SANITIZE_URL_ATTRIBUTES and is_unsafe_url(value))
+                    or (attr.lower() == 'srcset' and any(
+                        is_unsafe_url(candidate) for candidate in value.split(',')))
                     or (attr.lower() == 'style' and ('expression(' in value or 'javascript:' in value or 'url(' in value))):
                 del el.attrib[attr]
 
-    if not root.text_content().strip() and root.find('.//img') is None and root.find('.//iframe') is None:
+    if not root.text_content().strip() and not any(
+            root.find('.//' + tag) is not None for tag in SANITIZE_MEDIA_TAGS):
         return None
 
     # inner HTML only (no wrapper div), so sanitizing twice doesn't nest divs

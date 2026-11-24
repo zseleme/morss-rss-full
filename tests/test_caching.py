@@ -104,6 +104,21 @@ def test_crawler_uses_swapped_default_cache(monkeypatch):
     assert crawler.CacheHandler().cache is swapped
 
 
+def test_capped_dict_lock_is_reset_after_fork(monkeypatch):
+    # a worker forked while the parent's lock was held must get a free lock
+    from morss import caching
+    monkeypatch.setattr(caching.CappedDict, '_lock', caching.CappedDict._lock)
+    held = caching.CappedDict._lock
+    held.acquire()
+    try:
+        caching._reset_lock_after_fork()
+        assert caching.CappedDict._lock is not held
+        assert caching.CappedDict._lock.acquire(blocking=False)
+        caching.CappedDict._lock.release()
+    finally:
+        held.release()
+
+
 def test_capped_dict_concurrent_writes(monkeypatch):
     # gthread worker: several requests write to the same cache at once
     import threading

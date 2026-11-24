@@ -529,5 +529,7 @@ def cgi_start_server():
     httpd.serve_forever()
 
 
-if 'gunicorn' in os.getenv('SERVER_SOFTWARE', ''):
-    caching.default_cache.autotrim()
+# no autotrim under gunicorn: with --preload this runs in the master, whose
+# timer thread doesn't reach the workers (which hold the cache) anyway, and
+# could hold the cache lock at fork time. CappedDict trims on every write and
+# diskcache culls on writes, so nothing needs the timer.

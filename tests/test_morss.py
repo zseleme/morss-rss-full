@@ -224,6 +224,38 @@ def test_sanitize_html_keeps_image_only_content():
     assert '<img' in sanitize_html('<div><img src="https://e.com/a.jpg"></div>')
 
 
+@pytest.mark.parametrize('content', [
+    '<video src="https://e.com/v.mp4"></video>',
+    '<audio src="https://e.com/a.mp3"></audio>',
+    '<picture><img src="https://e.com/a.jpg"></picture>',
+])
+def test_sanitize_html_keeps_media_only_content(content):
+    from morss.morss import sanitize_html
+    assert sanitize_html(content) is not None
+
+
+def test_sanitize_html_keeps_media_attributes():
+    from morss.morss import sanitize_html
+    out = sanitize_html(
+        '<video controls poster="https://e.com/p.jpg" preload="none">'
+        '<source src="https://e.com/v.mp4" type="video/mp4"></video>'
+        '<audio controls src="https://e.com/a.mp3"></audio>'
+        '<picture><source srcset="https://e.com/a.webp 1x, https://e.com/b.webp 2x" type="image/webp">'
+        '<img src="https://e.com/a.jpg"></picture>')
+    for expected in ('controls', 'poster="https://e.com/p.jpg"', 'type="video/mp4"',
+                     'src="https://e.com/a.mp3"', 'srcset="https://e.com/a.webp 1x'):
+        assert expected in out
+
+
+def test_sanitize_html_checks_media_urls():
+    from morss.morss import sanitize_html
+    out = sanitize_html(
+        '<p>t</p><video poster="javascript:alert(1)" src="https://e.com/v.mp4"></video>'
+        '<picture><source srcset="https://e.com/a.webp 1x, javascript:alert(1) 2x"></picture>')
+    assert 'javascript' not in out
+    assert 'src="https://e.com/v.mp4"' in out
+
+
 @patch('morss.morss.cffi_requests')
 def test_itemfill_falls_back_when_extraction_is_empty(mock_cffi, monkeypatch):
     from morss import caching, morss

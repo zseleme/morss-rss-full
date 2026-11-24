@@ -81,6 +81,17 @@ class CappedDict(OrderedDict, BaseCache):
             self.trim()
 
 
+def _reset_lock_after_fork():
+    # a lock copied into a child process while some other thread of the
+    # parent held it stays held forever (that thread doesn't exist in the
+    # child): give every new process a fresh one
+    CappedDict._lock = threading.RLock()
+
+
+if hasattr(os, 'register_at_fork'): # python >= 3.7, posix
+    os.register_at_fork(after_in_child=_reset_lock_after_fork)
+
+
 try:
     import redis # isort:skip
 except ImportError:
